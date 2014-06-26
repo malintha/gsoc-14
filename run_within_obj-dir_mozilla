@@ -1,0 +1,16 @@
+/home/malintha/comm-central/obj-x86_64-unknown-linux-gnu/mozilla/_virtualenv/bin/python -u /home/malintha/comm-central/mozilla/config/pythonpath.py \
+          -I./build \
+          -I/home/malintha/comm-central/mozilla/build \
+          -I./_tests/mozbase/mozinfo \
+          /home/malintha/comm-central/mozilla/testing/xpcshell/runxpcshelltests.py \
+          --manifest=./_tests/xpcshell/xpcshell.ini \
+          --build-info-json=./mozinfo.json \
+          --interactive	 \
+          --test-plugin-path='dist/plugins' \
+          --tests-root-dir=/home/malintha/comm-central/obj-x86_64-unknown-linux-gnu/mozilla/_tests/xpcshell \
+          --testing-modules-dir=/home/malintha/comm-central/obj-x86_64-unknown-linux-gnu/mozilla/_tests/modules \
+          --xunit-file=/home/malintha/comm-central/obj-x86_64-unknown-linux-gnu/mozilla/_tests/xpcshell/results.xml \
+          --xunit-suite-name=xpcshell \
+          --symbols-path=dist/crashreporter-symbols \
+          --test-path='mozilla/_tests/xpcshell/calendar/test/unit/test_rfc6638_schedule_tag.js'  \
+          /home/malintha/comm-central/obj-x86_64-unknown-linux-gnu/mozilla/dist/bin/xpcshell

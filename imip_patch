@@ -1,0 +1,1068 @@
+# HG changeset patch
+# Parent 239bf16df29626650ea4ea4a82bd86363dcb818a
+
+diff -r 239bf16df296 mail/test/mozmill/calendar/Makefile.in
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/mail/test/mozmill/calendar/Makefile.in	Wed May 14 22:18:41 2014 +0530
+@@ -0,0 +1,69 @@
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++DEPTH		= @DEPTH@
++topsrcdir	= @top_srcdir@
++srcdir		= @srcdir@
++VPATH		= @srcdir@
++
++include $(DEPTH)/config/autoconf.mk
++
++MOZMILLDIR=$(DEPTH)/mozilla/_tests/mozmill
++ifeq ($(OS_ARCH),WINNT)
++VIRTUALENV_BIN = $(MOZMILLDIR)/../mozmill-virtualenv/Scripts
++else
++VIRTUALENV_BIN = $(MOZMILLDIR)/../mozmill-virtualenv/bin
++endif
++MOZMILLPYTHON = $(abspath $(VIRTUALENV_BIN)/python$(BIN_SUFFIX))
++
++ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
++# Mac options
++APP_NAME = $(MOZ_APP_DISPLAYNAME)
++ifdef MOZ_DEBUG
++APP_NAME := $(APP_NAME)Debug
++endif
++MOZMILLPROGRAM = $(DIST)/$(APP_NAME).app/
++else
++# Non-mac options
++MOZMILLPROGRAM = $(DIST)/bin/thunderbird$(BIN_SUFFIX)
++endif
++
++check-no-solo = $(foreach solo,SOLO_TEST SOLO_FILE,$(if $($(solo)),$(error $(subst SOLOVAR,$(solo),$(1)))))
++find-solo-test = $(if $(and $(SOLO_TEST),$(SOLO_FILE)),$(error Both SOLO_TEST and SOLO_FILE are specified. You may only specify one.),$(if $(SOLO_TEST),$(SOLO_TEST),$(if $(SOLO_FILE),$(SOLO_FILE),$(error SOLO_TEST or SOLO_FILE needs to be specified.))))
++
++include $(topsrcdir)/config/rules.mk
++
++# Calendar uses both its own shared modules and those from Thunderbird. Since
++# the build system and mozmill is not set up to include files from two different
++# locations, we have to stuff them into the same directory. There might be
++# problems if the names are the same, but I propose we boycott those modules!
++mozmill-stage: MOZMILL_STAGE=$(MOZMILLDIR)/stage
++mozmill-stage: MOZMILL_STAGE_SHARED=$(MOZMILL_STAGE)/shared-modules
++mozmill-stage: $(MOZMILL_SHARED)
++	$(INSTALL) -D $(MOZMILL_STAGE)
++	$(INSTALL) -D $(MOZMILL_STAGE_SHARED)
++	$(INSTALL) $(addprefix $(srcdir)/,$(shell cat $(srcdir)/mozmilltests.list)) $(MOZMILL_STAGE)
++
++	$(INSTALL) $(wildcard $(topsrcdir)/mail/test/mozmill/shared-modules/*.js) $(MOZMILL_STAGE_SHARED)
++	$(INSTALL) $(wildcard $(srcdir)/shared-modules/*.js) $(MOZMILL_STAGE_SHARED)
++
++mozmill: mozmill-stage
++	unset PYTHONHOME && cd $(MOZMILLDIR) && unset MACOSX_DEPLOYMENT_TARGET && \
++	$(MOZMILLPYTHON) runtestlist.py --list=$(srcdir)/mozmilltests.list \
++	--binary=$(MOZMILLPROGRAM) \
++	--dir=$(abspath $(MOZMILLDIR))/stage \
++	--symbols-path=$(abspath $(DIST)/crashreporter-symbols) \
++	--plugins-path=$(abspath $(DIST)/plugins) \
++	$(MOZMILL_EXTRA)
++
++mozmill-one: solo-test = $(find-solo-test)
++mozmill-one: mozmill-stage
++	unset PYTHONHOME && cd $(MOZMILLDIR) && unset MACOSX_DEPLOYMENT_TARGET && \
++	$(MOZMILLPYTHON) runtest.py \
++	--test=$(abspath $(MOZMILLDIR))/stage/$(solo-test) \
++	--binary=$(MOZMILLPROGRAM) \
++	--symbols-path=$(abspath $(DIST)/crashreporter-symbols) \
++	--plugins-path=$(abspath $(DIST)/plugins) \
++	$(MOZMILL_EXTRA)
++
+diff -r 239bf16df296 mail/test/mozmill/calendar/moz.build
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/mail/test/mozmill/calendar/moz.build	Wed May 14 22:18:41 2014 +0530
+@@ -0,0 +1,6 @@
++# vim: set filetype=python:
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++
+diff -r 239bf16df296 mail/test/mozmill/calendar/test-imip.js
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/mail/test/mozmill/calendar/test-imip.js	Wed May 14 22:18:41 2014 +0530
+@@ -0,0 +1,199 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++ 
++ 
++//place this in mail/test/mozmill/calendar
++//paste the calendar-utils in mail/test/mozmill/shared-modules
++//run as normal thunderbird test
++
++var Ci = Components.interfaces;
++var Cc = Components.classes;
++var Cu = Components.utils;
++ 
++ 
++var MODULE_NAME = 'test-imip';
++var RELATIVE_ROOT = '../shared-modules';
++var MODULE_REQUIRES = ['folder-display-helpers',
++                       'window-helpers','calendar-utils','compose-helpers','prompt-helpers','timezone-utils'];
++var calUtils = require("../shared-modules/calendar-utils");
++var elib = {};
++Cu.import('resource://mozmill/modules/elementslib.js', elib);
++var EventUtils = {};
++Cu.import('resource://mozmill/stdlib/EventUtils.js', EventUtils);
++Cu.import("resource://gre/modules/Services.jsm");
++var messenger;
++var folder;
++var os = {};
++Components.utils.import('resource://mozmill/stdlib/os.js', os);
++const sleep = 500;
++const invitationAttachment = [
++        "BEGIN:VCALENDAR",
++        "PRODID:-//Inverse inc./SOGo 2.1.1b//EN",
++				"VERSION:2.0",
++				"CALSCALE:GREGORIAN",
++				"METHOD:REQUEST",
++        "BEGIN:VEVENT",
++        "DTSTART:20140515T050000Z",
++				"DTEND:20140515T063000Z",
++				"DTSTAMP:20140514T034846Z",
++				"RRULE:FREQ=3DYEARLY;BYMONTH=3D3;BYDAY=3D2SU",
++        "ORGANIZER;CN=John Doe:mailto:john@foo.invalid",
++        "UID:576-53715980-1-5E904600",
++        "CLASS:PUBLIC",
++				"ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Tinderbox;X-NUM-GUESTS=0:mailto:tinderbox@foo.invalid",
++        "ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=TRUE;CN=John Doeo;X-NUM-GUESTS=0:mailto:john@foo.invalid",
++        "LOCATION:",
++				"SEQUENCE:0",
++				"STATUS:CONFIRMED",
++				"SUMMARY:IMIP testing event",
++				"TRANSP:OPAQUE",
++        "CREATED:20140511T112534Z",
++        "END:VEVENT",
++        "END:VCALENDAR"].join("\r\n");
++ 
++function setupModule(module) {
++
++  controller = mozmill.getMail3PaneController();
++  let fdh = collector.getModule('folder-display-helpers');
++  fdh.installInto(module);
++  let ch = collector.getModule("compose-helpers");
++  ch.installInto(module);
++  let wh = collector.getModule('window-helpers');
++  wh.installInto(module);
++    
++  collector.getModule("prompt-helpers").installInto(module);
++  folder = create_folder('ImipFolder');
++  messenger = Components.classes['@mozilla.org/messenger;1']
++                        .createInstance(Components.interfaces.nsIMessenger);
++ 
++  isWindows = '@mozilla.org/windows-registry-key;1' in Components.classes;
++
++  let msg5 = create_message(
++    {
++    	from: ["malintha", "malinthaf@wso2.com"],
++    	to:["Tinderbox","tinderbox@foo.invalid"],
++    	subject:["Invitation: TestingEvent @ Sun May 11, 2014 10am - 11am (john@foo.invalid)"],
++    	body:{
++							to:"tinderbox@foo.invalid",
++    					body:"",
++    					subject: "Customized: TestingEvent @ Sun May 11, 2014 10am - 11am"
++    	},
++    	attachments: [{ 
++								    	from: ["John Doe", "john@foo.invalid"],
++								    	to:["Tinderbox","tinderbox@foo.invalid"],
++											contentType: 'text/calendar',
++											MIMEVersion: '1.0',
++											method:'REQUEST',
++											messageId: 'CAGFBr6MY94cd_PFW5zxkAxjubHpW1OgsurjWdFKpZDmjh4VTaw@mail.gmail.com',
++											charset: 'UTF-8',
++    									body: invitationAttachment,
++     	                filename: 'invite.ics',
++                      format: ''
++                      }]
++    
++    });
++        
++  	add_message_to_folder(folder, msg5);
++
++}
++
++function test_attachment_view_collapsed() {
++	be_in_folder(folder);
++  select_click_row(0);
++  assert_selected_and_displayed(0);    
++	controller.sleep(sleep);
++}
++
++function testAcceptInjectedEvent(){
++
++	let btnAccept = new elementslib.ID(controller.window.document, "imipAcceptButton");
++	gMockPromptService.register();
++	//ensure the accept button is available
++	controller.assertNode(btnAccept);
++
++	gMockPromptService.returnValue = 1;
++	try{
++		promptState = gMockPromptService.promptState;
++		controller.click(btnAccept);
++			
++	}
++	catch(e){
++	//in a case throw up an error "cannot send mail", click ok on it 
++	controller.window.alert(e);
++	controller.keypress(undefined, "VK_ENTER", {});
++	}
++		gMockPromptService.unregister();	
++}
++
++function testInjectedEvent(){
++	//check for the event injected by mail
++	controller.click(new elementslib.ID(controller.window.document, "calendar-tab-button"));
++ 	calUtils.switchToView(controller, "day");
++	calUtils.goToDate(controller, 2014, 5, 15);
++	controller.sleep(sleep);
++
++	//make sure event was added to the right position
++	controller.assertNode(new elementslib.Lookup(controller.window.document, calUtils.getEventBoxPath(controller,"day", calUtils.CANVAS_BOX,undefined, 1, 11)));
++	}
++	
++function testdeleteInjectedEvent(){
++	gMockPromptService.register();
++	gMockPromptService.returnValue = 1;
++	calUtils.goToDate(controller, 2014, 5, 15);
++	controller.sleep(sleep);
++	controller.click(new elementslib.Lookup(controller.window.document, calUtils.getEventBoxPath(controller,"day", calUtils.CANVAS_BOX,undefined, 1, 11)));
++	try{
++	promptState = gMockPromptService.promptState;
++  controller.keypress(new elementslib.ID(controller.window.document, "day-view"), "VK_DELETE", {});
++  }
++  catch(e){
++  	//in a case throw up an error "cannot send mail", click ok on it 
++	controller.window.alert(e);
++	controller.keypress(undefined, "VK_ENTER", {});
++  }
++  controller.sleep(sleep);
++  gMockPromptService.unregister();
++  let boxPath=calUtils.getEventBoxPath(controller,"day", calUtils.EVENT_BOX,undefined, 1, 11)+'/{"tooltip":"itemTooltip"}';
++  controller.assertNodeNotExist(new elementslib.Lookup(controller.window.document,boxPath));
++
++}
++
++function testCreateEvent(){
++	/*
++	 * Adding the event manually
++	 */
++	controller.click(new elementslib.ID(controller.window.document, "calendar-tab-button"));
++	//Documentation wrong: it's calUtils.switchToView(controller,"day");
++	calUtils.switchToView(controller, "day");
++	//goto date: documentation is wrong. it's function goToDate(controller, year, month, day);
++	calUtils.goToDate(controller, 2014, 5, 11);
++	controller.sleep(sleep);
++	let eventTime = calUtils.getEventBoxPath(controller,"day", calUtils.CANVAS_BOX, undefined, 1, 10);
++	let clickEvent = new elementslib.Lookup(controller.window.document,eventTime)
++	controller.doubleClick(clickEvent);
++	controller.waitForEval('utils.getWindows("Calendar:EventDialog").length > 0', 2000);
++	let event = new mozmill.controller.MozMillController(mozmill.utils.getWindows("Calendar:EventDialog")[0]);
++	controller.sleep(sleep);	
++	event.click(new elementslib.ID(event.window.document, "button-save"));
++	controller.sleep(sleep);
++	}
++
++function testCreatedEvent(){
++ 	controller.click(new elementslib.ID(controller.window.document, "calendar-tab-button"));
++ 	calUtils.switchToView(controller, "day");
++	calUtils.goToDate(controller, 2014, 2, 5);
++	let addedEvent = calUtils.getEventBoxPath(controller,"day", calUtils.CANVAS_BOX,undefined, 1, 10);
++	controller.assertNode(new elementslib.Lookup(controller.window.document, addedEvent));
++}
++
++function testdeleteCreatedEvent(){
++	calUtils.switchToView(controller, "day");
++	calUtils.goToDate(controller, 2014, 2, 5);
++	controller.click(new elementslib.Lookup(controller.window.document, calUtils.getEventBoxPath(controller,"day", calUtils.CANVAS_BOX,undefined, 1, 10)));
++  controller.keypress(new elementslib.ID(controller.window.document, "day-view"), "VK_DELETE", {});
++  let boxPath = calUtils.getEventBoxPath(controller,"day", calUtils.EVENT_BOX,undefined, 1, 10)+'/{"tooltip":"itemTooltip"}';
++  controller.assertNodeNotExist(new elementslib.Lookup(controller.window.document, boxPath));
++}
++
++
+diff -r 239bf16df296 mail/test/mozmill/shared-modules/calendar-utils.js
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/mail/test/mozmill/shared-modules/calendar-utils.js	Wed May 14 22:18:41 2014 +0530
+@@ -0,0 +1,678 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++var MODULE_NAME = "calendar-utils";
++var MODULE_REQUIRES = ["window-helpers"];
++
++var os = {};      Components.utils.import('resource://mozmill/stdlib/os.js', os);
++var frame = {};      Components.utils.import('resource://mozmill/modules/frame.js', frame);
++
++var modalDialog = require("test-window-helpers");
++
++const sleep = 500;
++const EVENT_BOX = 0; // Use when you need an event box
++const CANVAS_BOX = 1; // Use when you need a calendar canvas box
++const ALLDAY = 2; // Use when you need an allday canvas or event box
++
++/**
++ *  Accept to send notification email with event to attendees
++ *  @param controller - Mozmill window controller
++ */
++function acceptSendingNotificationMail(controller) {
++  modalDialog.plan_for_modal_dialog("commonDialog", function(dialog) {
++      dialog.waitThenClick(new elementslib.Lookup(dialog.window.document, '/id("commonDialog")/'
++        + 'anon({"anonid":"buttons"})/{"dlgtype":"accept"}'));
++    }
++  );
++
++  modalDialog.wait_for_modal_dialog("commonDialog");
++}
++
++/**
++ *  Add an attachment with url
++ *  @param controller - Mozmill window controller
++ */
++function handleAddingAttachment(controller, url) {
++  modalDialog.plan_for_modal_dialog("commonDialog",function(attachment) {
++    let input = new elementslib.ID(attachment.window.document, 'loginTextbox');
++    attachment.waitForElement(input);
++    input.getNode().value = url;
++    attachment.click(new elementslib.Lookup(attachment.window.document, '/id("commonDialog")/'
++      + 'anon({"anonid":"buttons"})/{"dlgtype":"accept"}'));
++  });
++
++  modalDialog.wait_for_modal_dialog("commonDialog");
++}
++
++/**
++ *  Choose to delete just one occurrence of a repeating event
++ *  @param controller - Mozmill window controller
++ *  @param attendees - whether there are attendees that can be notified or not
++ */
++function handleOccurrenceDeletion(controller, attendees) {
++  let md = new modalDialog.modalDialog(controller.window);
++  md.start(
++    function(dialog){
++      if(attendees)
++        acceptSendingNotificationMail();
++      dialog.waitThenClick(new elementslib.ID(dialog.window.document, "accept-occurrence-button"));
++    }
++  );
++}
++
++/**
++ *  Choose to delete all occurrences of a repeating event
++ *  @param controller - Mozmill window controller
++ *  @param attendees - whether there are attendees that can be notified or not
++ */
++function handleParentDeletion(controller, attendees){
++  let md = new modalDialog.modalDialog(controller.window);
++  md.start(
++    function(dialog){
++      if(attendees)
++        acceptSendingNotificationMail();
++      dialog.waitThenClick(new elementslib.ID(dialog.window.document, "accept-parent-button"));
++    }
++  );
++}
++
++/**
++ *  Choose to modify just one occurrence of a repeating event
++ *  @param controller - Mozmill window controller
++ *  @param attendees - whether there are attendees that can be notified or not
++ */
++function handleOccurrenceModification(controller, attendees){
++  handleOccurrenceDeletion(controller, attendees);
++}
++
++/**
++ *  Choose to modify all occurrences of a repeating event
++ *  @param controller - Mozmill window controller
++ *  @param attendees - whether there are attendees that can be notified or not
++ */
++function handleParentModification(controller, attendees){
++  handleParentDeletion(controller, attendees);
++}
++
++/**
++ *  Switch to a view
++ *  @param controller - Mozmill window controller
++ *  @param view - day, week, multiweek or month
++ */
++function switchToView(controller, view){
++  switch(view){
++    case "week":
++      controller.waitThenClick(new elementslib.ID(controller.window.document,
++        "calendar-week-view-button"));
++      controller.waitFor(function() {
++        let button = (new elementslib.ID(controller.window.document,
++        "calendar-week-view-button"));
++        return button.getNode().selected == true;
++      });
++      break;
++    case "multiweek":
++      controller.waitThenClick(new elementslib.ID(controller.window.document,
++        "calendar-multiweek-view-button"));
++      controller.waitFor(function() {
++        let button = (new elementslib.ID(controller.window.document,
++        "calendar-multiweek-view-button"));
++        return button.getNode().selected == true;
++      });
++      break;
++    case "month":
++      controller.waitThenClick(new elementslib.ID(controller.window.document,
++        "calendar-month-view-button"));
++      controller.waitFor(function() {
++        let button = (new elementslib.ID(controller.window.document,
++        "calendar-month-view-button"));
++        return button.getNode().selected == true;
++      });
++      break;
++    default:
++      controller.waitThenClick(new elementslib.ID(controller.window.document,
++        "calendar-day-view-button"));
++      controller.waitFor(function() {
++        let button = (new elementslib.ID(controller.window.document,
++        "calendar-day-view-button"));
++        return button.getNode().selected == true;
++      });
++  }
++}
++
++/**
++ *  Go to a specific date using minimonth
++ *  @param controller - main window controller
++ *  @param year - four-digit year
++ *  @param month - 1-based index of a month
++ *  @param day - 1-based index of a day
++ */
++function goToDate(controller, year, month, day){
++  let miniMonth = '/id("messengerWindow")/id("tabmail-container")/id("tabmail")/'
++    + 'id("tabpanelcontainer")/id("calendarTabPanel")/id("calendarContent")/id("ltnSidebar")/'
++    + 'id("minimonth-pane")/{"align":"center"}/id("calMinimonthBox")/id("calMinimonth")/';
++  let activeYear = (new elementslib.Lookup(controller.window.document, miniMonth
++    + 'anon({"anonid":"minimonth-header"})/anon({"anonid":"minmonth-popupset"})/'
++    + 'anon({"anonid":"years-popup"})/[0]/{"current":"true"}')).getNode().getAttribute("value");
++  let activeMonth = (new elementslib.Lookup(controller.window.document, miniMonth
++    + 'anon({"anonid":"minimonth-header"})/anon({"anonid":"minmonth-popupset"})/'
++    + 'anon({"anonid":"months-popup"})/[0]/{"current":"true"}')).getNode().getAttribute("index");
++  let yearDifference = activeYear - year;
++  let monthDifference = activeMonth - (month - 1);
++  
++  if (yearDifference != 0) {
++    let scrollArrow = yearDifference > 0 ?
++      (new elementslib.Lookup(controller.window.document, miniMonth
++        + 'anon({"anonid":"minimonth-header"})/anon({"anonid":"minmonth-popupset"})/'
++        + 'anon({"anonid":"years-popup"})/[0]/{"class":"autorepeatbutton-up"}')).getNode() :
++      (new elementslib.Lookup(controller.window.document, miniMonth
++        + 'anon({"anonid":"minimonth-header"})/anon({"anonid":"minmonth-popupset"})/'
++        + 'anon({"anonid":"years-popup"})/[0]/{"class":"autorepeatbutton-down"}')).getNode();
++    
++    // pick year
++    controller.click(new elementslib.Lookup(controller.window.document, miniMonth
++      + 'anon({"anonid":"minimonth-header"})/anon({"anonid":"yearcell"})'));
++    controller.sleep(500);
++    
++    for(let i = 0; i < Math.abs(yearDifference); i++){
++      scrollArrow.doCommand();
++      controller.sleep(100);
++    }
++  
++    controller.click(new elementslib.Lookup(controller.window.document, miniMonth
++      + 'anon({"anonid":"minimonth-header"})/anon({"anonid":"minmonth-popupset"})/'
++      + 'anon({"anonid":"years-popup"})/[0]/{"value":"' + year + '"}'));
++    controller.sleep(500);
++  }
++  
++  if (monthDifference != 0) {
++    // pick month
++    controller.click(new elementslib.Lookup(controller.window.document, miniMonth
++      + 'anon({"anonid":"minimonth-header"})/anon({"anonid":"monthheader"})/[' + activeMonth
++      + ']'));
++    controller.waitThenClick(new elementslib.Lookup(controller.window.document, miniMonth
++      + 'anon({"anonid":"minimonth-header"})/anon({"anonid":"minmonth-popupset"})/'
++      + 'anon({"anonid":"months-popup"})/[0]/{"index":"' + (month - 1) + '"}'));
++    controller.sleep(500);
++  }
++  
++  let lastDayInFirstRow = (new elementslib.Lookup(controller.window.document,
++    miniMonth + 'anon({"anonid":"minimonth-calendar"})/[1]/[6]')).getNode().getAttribute("value");
++  let positionOfFirst = 7 - lastDayInFirstRow;
++  let dateColumn = (positionOfFirst + day - 1) % 7;
++  let dateRow = Math.floor((positionOfFirst + day - 1) / 7);
++  
++  // pick day
++  controller.click(new elementslib.Lookup(controller.window.document, miniMonth
++    + 'anon({"anonid":"minimonth-calendar"})/[' + (dateRow + 1) + ']/[' + dateColumn + ']'));
++  controller.sleep(500);
++}
++
++/**
++ *  @param controller - main window controller
++ *  @param view - day, week, multiweek or month
++ *  @param option - bg for creating event, fg for checking
++ *  @param row - only used in multiweek and month view, 1-based index of a row
++ *  @param column - 1-based index of a column
++ *  @param hour - index of hour box
++ *  @returns path string
++ */
++function getEventBoxPath(controller, view, option, row, column, hour){
++  let viewDeck = '/id("messengerWindow")/id("tabmail-container")/id("tabmail")/'
++    + 'id("tabpanelcontainer")/id("calendarTabPanel")/id("calendarContent")/'
++    + 'id("calendarDisplayDeck")/id("calendar-view-box")/id("view-deck")';
++  let dayView = viewDeck + '/id("day-view")';
++  let weekView = viewDeck + '/id("week-view")';
++  let multiweekView = viewDeck + '/id("multiweek-view")';
++  let monthView = viewDeck + '/id("month-view")';
++  
++  let path = '';
++  switch(view){
++    case "week":
++      path += weekView;
++      break;
++    case "multiweek":
++      path += multiweekView;
++      break;
++    case "month":
++      path += monthView;
++      break;
++    default: path += dayView;
++  }
++  
++  if((view == "day" || view == "week") && option == ALLDAY){
++    path += '/anon({"anonid":"mainbox"})/anon({"anonid":"headerbox"})/anon({"anonid":"headerdaybox"})';
++    path += '/[' + (column - 1) + ']';
++    
++    return path;
++  }
++  else if(view == "day" || view == "week"){
++    path += '/anon({"anonid":"mainbox"})/anon({"anonid":"scrollbox"})/anon({"anonid":"daybox"})';
++    path += '/[' + (column - 1) + ']';
++    path += '/anon({"anonid":"boxstack"})';
++    
++    if(option == CANVAS_BOX)
++      path += '/anon({"anonid":"bgbox"})/[' + hour + ']';
++    else
++      path += '/anon({"anonid":"topbox"})/{"flex":"1"}/{"flex":"1"}/{"flex":"1"}';
++    
++    return path;
++  }
++  else{
++    path += '/anon({"anonid":"mainbox"})/anon({"anonid":"monthgrid"})/'
++      + 'anon({"anonid":"monthgridrows"})/[' + (row - 1) + ']/[' + (column - 1) + ']';
++  
++    if(option == CANVAS_BOX)
++      path += '/anon({"anonid":"day-items"})';
++    
++    return path;
++  }
++}
++
++/**
++ * @param controller - Mozmill window controller
++ * @param n - how many times next button in view is clicked
++ */
++function forward(controller, n){
++  for(let i = 0; i < n; i++){
++    controller.click(new elementslib.ID(controller.window.document, "next-view-button"));
++    controller.sleep(100);
++  }
++}
++
++/**
++ * @param controller - Mozmill window controller
++ * @param n - how many times previous button in view is clicked
++ */
++function back(controller, n){
++  for(let i = 0; i < n; i++){
++    controller.click(new elementslib.ID(controller.window.document, "previous-view-button"));
++    controller.sleep(100);
++  }
++}
++
++/**
++ * Deletes all calendars with given name
++ * @param controller - Mozmill window controller
++ * @param name - calendar name
++ */
++function deleteCalendars(controller, name){
++  let defaultView = (new elementslib.ID(controller.window.document, "messengerWindow"))
++                    .getNode().ownerDocument.defaultView;
++  let manager = defaultView.getCalendarManager();
++  let cals = manager.getCalendars({});
++
++  for (let i = 0; i < cals.length; i++)
++    if (cals[i].name == name){
++      manager.unregisterCalendar(cals[i]);
++      manager.deleteCalendar(cals[i]);
++    }
++}
++
++/**
++ * Creates local calendar with given name and select it in calendars list
++ * @param controller - Mozmill window controller
++ * @param name - calendar name
++ */
++function createCalendar(controller, name){
++  let defaultView = (new elementslib.ID(controller.window.document, "messengerWindow"))
++                    .getNode().ownerDocument.defaultView;
++  let manager = defaultView.getCalendarManager();
++
++  let url = defaultView.makeURL("moz-storage-calendar://");
++  let calendar = manager.createCalendar("storage", url);
++  calendar.name = name;
++  manager.registerCalendar(calendar);
++  
++  let id = calendar.id;
++  let calendarTree = (new elementslib.Lookup(controller.window.document,
++    '/id("messengerWindow")/id("tabmail-container")/id("tabmail")/id("tabpanelcontainer")/'
++    + 'id("calendarTabPanel")/id("calendarContent")/id("ltnSidebar")/id("calendar-panel")/'
++    + 'id("calendar-list-pane")/id("calendar-listtree-pane")/id("calendar-list-tree-widget")'))
++    .getNode();
++  for(i = 0; i < calendarTree.mCalendarList.length; i++)
++    if(calendarTree.mCalendarList[i].id == id)
++      calendarTree.tree.view.selection.select(i);
++}
++
++/**
++ * Retrieves array of all calendar-event-box elements in node
++ * @param node - node to be searched
++ * @param eventNodes - array where to put resultíng nodes
++ */
++function findEventsInNode(node, eventNodes) {
++  if(node.tagName == "calendar-event-box") {
++    eventNodes.push(node);
++    return;
++  }
++  else if(node.children.length > 0) {
++    for (let i = 0; i < node.children.length; i++) {
++      findEventsInNode(node.children[i], eventNodes);
++    }
++  }
++}
++
++/**
++ *  Helper function to enter event/task dialog data
++ *  @param controller - event/task controller
++ *  @param data - dataset object
++ *                  title - event/task title
++ *                  location - event/task location
++ *                  description - event/task description
++ *                  category - category label
++ *                  allday - boolean value
++ *                  startdate - Date object
++ *                  starttime - Date object
++ *                  enddate - Date object
++ *                  endtime - Date object
++ *                  timezone - false for local, true for set timezone
++ *                  repeat - reccurrence value, one of none/daily/weekly/every.weekday/bi.weekly/
++ *                           monthly/yearly/custom
++ *                  reminder - reminder option index
++ *                  priority - none/low/normal/high
++ *                  privacy - public/confidential/private
++ *                  status - none/tentative/confirmed/canceled for events
++ *                           none/needs-action/in-process/completed/cancelled for tasks
++ *                  completed - Date object for tasks
++ *                  percent - percent complete for tasks
++ *                  freebusy - free/busy
++ *                  attachment.add - url to add
++ *                  attachment.remove - label of url to remove (without http://)
++ */
++function setData(controller, data) {
++  let eventDialog = '/id("calendar-event-dialog")/id("event-grid")/id("event-grid-rows")/';
++  let taskDialog = '/id("calendar-task-dialog")/id("event-grid")/id("event-grid-rows")/';
++  let dialog;
++  let isEvent = true;
++  
++  // see if it's an event dialog
++  try {
++    (new elementslib.Lookup(controller.window.document, eventDialog)).getNode();
++    dialog = eventDialog;
++  } catch (error) {
++    dialog = taskDialog;
++    isEvent = false;
++  }
++
++  let dateInput = 'anon({"class":"datepicker-box-class"})/{"class":"datepicker-text-class"}/'
++    + 'anon({"class":"menulist-editable-box textbox-input-box"})/anon({"anonid":"input"})';
++  let timeInput = 'anon({"anonid":"hbox"})/anon({"anonid":"time-picker"})/'
++    + 'anon({"class":"timepicker-box-class"})/anon({"class":"timepicker-text-class"})/'
++    + 'anon({"flex":"1"})/anon({"anonid":"input"})'
++  let startDateInput = new elementslib.Lookup(controller.window.document, dialog
++    + 'id("event-grid-startdate-row")/id("event-grid-startdate-picker-box")/'
++    + (isEvent ? 'id("event-starttime")/' : 'id("todo-entrydate")/')
++    + 'anon({"anonid":"hbox"})/anon({"anonid":"date-picker"})/' + dateInput);
++  let endDateInput = new elementslib.Lookup(controller.window.document, dialog
++    + 'id("event-grid-enddate-row")/[1]/id("event-grid-enddate-picker-box")/'
++    + (isEvent ? 'id("event-endtime")/' : 'id("todo-duedate")/')
++    + 'anon({"anonid":"hbox"})/anon({"anonid":"date-picker"})/' + dateInput);
++  let startTimeInput = new elementslib.Lookup(controller.window.document, dialog
++    + 'id("event-grid-startdate-row")/id("event-grid-startdate-picker-box")/'
++    + (isEvent ? 'id("event-starttime")/' : 'id("todo-entrydate")/')
++    + timeInput);
++  let endTimeInput = new elementslib.Lookup(controller.window.document, dialog
++    + 'id("event-grid-enddate-row")/[1]/id("event-grid-enddate-picker-box")/'
++    + (isEvent ? 'id("event-endtime")/' : 'id("todo-duedate")/')
++    + timeInput);
++  let completedDateInput = new elementslib.Lookup(controller.window.document,
++    dialog + 'id("event-grid-todo-status-row")/id("event-grid-todo-status-picker-box")/'
++    + 'id("completed-date-picker")/' + dateInput);
++  let percentCompleteInput = new elementslib.Lookup(controller.window.document, dialog
++    + 'id("event-grid-todo-status-row")/id("event-grid-todo-status-picker-box")/'
++    + 'id("percent-complete-textbox")/anon({"class":"textbox-input-box numberbox-input-box"})/'
++    + 'anon({"anonid":"input"})');
++  let dateService = Components.classes["@mozilla.org/intl/scriptabledateformat;1"]
++                              .getService(Components.interfaces.nsIScriptableDateFormat);
++  let mac = utils.appInfo.os.toLowerCase().indexOf("darwin") != -1;
++  // wait for input elements' values to be populated
++  controller.sleep(sleep);
++  
++  // title
++  if (data.title != undefined) {
++    if (!mac) {
++      controller.keypress(new elementslib.Lookup(controller.window.document, dialog
++        + 'id("event-grid-title-row")/id("item-title")/anon({"class":"textbox-input-box"})/'
++        + 'anon({"anonid":"input"})'),
++        'a', {ctrlKey: true});
++      controller.type(new elementslib.Lookup(controller.window.document, dialog
++        + 'id("event-grid-title-row")/id("item-title")/anon({"class":"textbox-input-box"})/'
++        + 'anon({"anonid":"input"})'),
++        data.title);
++    } else {
++      let titleField = new elementslib.ID(controller.window.document, "item-title");
++      titleField.getNode().value = data.title;
++    }
++  }
++  
++  // location
++  if (data.location != undefined) {
++    if (!mac) {
++      controller.keypress(new elementslib.Lookup(controller.window.document, dialog
++        + 'id("event-grid-location-row")/id("item-location")/anon({"class":"textbox-input-box"})/'
++        + 'anon({"anonid":"input"})'),
++        'a', {ctrlKey: true});
++      controller.type(new elementslib.Lookup(controller.window.document, dialog
++        + 'id("event-grid-location-row")/id("item-location")/anon({"class":"textbox-input-box"})/'
++        + 'anon({"anonid":"input"})'),
++        data.location);
++    } else {
++      let locationField = new elementslib.ID(controller.window.document, "item-location");
++      locationField.getNode().value = data.location;
++    }
++  }
++  
++  // category
++  if (data.category != undefined) {
++    controller.select(new elementslib.ID(controller.window.document, "item-categories"), undefined,
++      data.category);
++    controller.sleep(sleep);
++  }
++  
++  // all-day
++  if (data.allday != undefined && isEvent) {
++    controller.check(new elementslib.ID(controller.window.document, "event-all-day"), data.allday);
++  }
++  
++  // timezone
++  if (data.timezone != undefined) {
++    let menuitem = new elementslib.ID(controller.window.document, "options-timezones-menuitem");
++    menuitem.getNode().setAttribute("checked", data.timezone);
++    controller.click(menuitem);
++  }
++  
++  // startdate
++  if (data.startdate != undefined && data.startdate.constructor.name == 'Date') {
++    let startdate = dateService.FormatDate("", dateService.dateFormatShort,
++      data.startdate.getFullYear(), data.startdate.getMonth() + 1, data.startdate.getDate());
++    if(!isEvent)
++      controller.check(new elementslib.ID(controller.window.document, "todo-has-entrydate"), true);
++    if (!mac) {
++      controller.keypress(startDateInput, 'a', {ctrlKey: true});
++      controller.type(startDateInput, startdate);
++    } else {
++      startDateInput.getNode().value = startdate;
++    }
++  }
++  
++  // starttime
++  if (data.starttime != undefined && data.starttime.constructor.name == 'Date') {
++    let starttime = dateService.FormatTime("", dateService.timeFormatNoSeconds,
++      data.starttime.getHours(), data.starttime.getMinutes(), 0);
++    if (!mac) {
++      controller.keypress(startTimeInput, 'a', {ctrlKey: true});
++      controller.type(startTimeInput, starttime);
++    } else {
++      startTimeInput.getNode().value = starttime;
++      controller.sleep(sleep);
++    }
++  }
++  
++  // enddate
++  if (data.enddate != undefined && data.enddate.constructor.name == 'Date') {
++    let enddate = dateService.FormatDate("", dateService.dateFormatShort,
++      data.enddate.getFullYear(), data.enddate.getMonth() + 1, data.enddate.getDate());
++    if(!isEvent)
++      controller.check(new elementslib.ID(controller.window.document, "todo-has-duedate"), true);
++    if (!mac) {
++      controller.keypress(endDateInput, 'a', {ctrlKey: true});
++      controller.type(endDateInput, enddate);
++    } else {
++      endDateInput.getNode().value = enddate;
++    }
++  }
++  
++  // endttime
++  if (data.endtime != undefined && data.endtime.constructor.name == 'Date') {
++    let endtime = dateService.FormatTime("", dateService.timeFormatNoSeconds,
++      data.endtime.getHours(), data.endtime.getMinutes(), 0);
++    if (!mac) {
++      controller.keypress(endTimeInput, 'a', {ctrlKey:true});
++      controller.type(endTimeInput, endtime);
++    } else {
++      endTimeInput.getNode().value = endtime;
++      controller.sleep(sleep);
++    }
++  }
++  
++  // recurrence
++  if (data.repeat != undefined) {
++    controller.select(new elementslib.ID(controller.window.document, "item-repeat"), undefined,
++      undefined, data.repeat);
++  }
++  
++  // reminder
++  if (data.reminder != undefined) {
++    controller.select(new elementslib.ID(controller.window.document, "item-alarm"), data.reminder);
++  }
++  
++  // description
++  if (data.description != undefined) {
++    if (!mac) {
++      controller.keypress(new elementslib.Lookup(controller.window.document, dialog
++        + 'id("event-grid-description-row")/id("item-description")/'
++        + 'anon({"class":"textbox-input-box"})/anon({"anonid":"input"})'),
++        'a', {ctrlKey: true});
++      controller.type(new elementslib.Lookup(controller.window.document, dialog
++        + 'id("event-grid-description-row")/id("item-description")/'
++        + 'anon({"class":"textbox-input-box"})/anon({"anonid":"input"})'),
++        data.description);
++    } else {
++      let descField = new elementslib.Lookup(controller.window.document, dialog
++        + 'id("event-grid-description-row")/id("item-description")/'
++        + 'anon({"class":"textbox-input-box"})/anon({"anonid":"input"})');
++      descField.getNode().value = data.description;
++    }
++  }
++  
++  // priority
++  if (data.priority != undefined) {
++    controller.mainMenu.click("#options-priority-" + data.priority + "-label");
++  }
++  
++  // privacy
++  if (data.privacy != undefined) {
++    controller.mainMenu.click("#options-privacy-" + data.privacy + "-menuitem");
++  }
++  
++  // status
++  if (data.status != undefined) {
++    if (isEvent) {
++      controller.mainMenu.click("#options-status-" + data.status + "-menuitem");
++    } else {
++      controller.select(new elementslib.ID(controller.window.document, "todo-status"), undefined,
++        undefined, data.status.toUpperCase());
++      controller.sleep(sleep);
++    }
++  }
++  
++  let currentStatus = (new elementslib.ID(controller.window.document, "todo-status")).getNode().value;
++  
++  // completed on
++  if (data.completed != undefined && data.completed.constructor.name == 'Date' && !isEvent) {
++    let completeddate = dateService.FormatDate("", dateService.dateFormatShort,
++      data.completed.getFullYear(), data.completed.getMonth() + 1,
++      data.completed.getDate());
++    
++    if ( currentStatus == "COMPLETED") {
++      if (!mac) {
++        controller.keypress(completedDateInput, 'a', {ctrlKey: true});
++        controller.type(completedDateInput, completeddate);
++      } else {
++        completedDateInput.getNode().value = completeddate;
++      }
++    }
++  }
++  
++  // percent complete
++  if (data.percent != undefined && 
++       (currentStatus == "NEEDS-ACTION" || currentStatus == "IN-PROCESS" ||
++        currentStatus == "COMPLETED")) {
++    percentCompleteInput.getNode().value = data.percent;
++  }
++  
++  // free/busy
++  if (data.freebusy != undefined) {
++    controller.mainMenu.click("#options-freebusy-" + data.freebusy + "-menuitem");
++  }
++  
++  // attachment
++  if (data.attachment != undefined) {
++    if (data.attachment.add != undefined) {
++      handleAddingAttachment(controller, data.attachment.add);
++      controller.click(new elementslib.ID(controller.window.document, "button-url"));
++    }
++    if (data.attachment.delete != undefined) {
++      controller.click(new elementslib.Lookup(controller.window.document, dialog
++        + 'id("event-grid-attachment-row")/id("attachment-link")/{"label":"' +
++        data.attachment.delete + '"}'));
++      controller.keypress(new elementslib.ID(controller.window.document, "attachment-link"),
++        "VK_DELETE", {});
++    }
++  }
++  
++  controller.sleep(sleep);
++}
++
++function open_lightning_prefs(aCallback, aParentController, collector, windowTimeout) {
++  function paneLoadedChecker() {
++    let pane = prefsController.window.document.getElementById("paneLightning");
++    return pane.loaded;
++  }
++
++  let timeout = windowTimeout || 30000;
++  aParentController.window.openOptionsDialog("paneLightning");
++  aParentController.waitFor(function() {return mozmill.utils.getWindows("Mail:Preferences").length == 1},
++                            "Error opening preferences window", timeout);
++  let prefsController = new mozmill.controller.MozMillController(mozmill.utils.getWindows("Mail:Preferences")[0]);
++  prefsController.waitFor(paneLoadedChecker, "Timed out waiting for lightning prefpane to load.");
++
++  aCallback(prefsController);
++
++  prefsController.window.close();
++  aParentController.waitFor(function() {return mozmill.utils.getWindows("Mail:Preferences").length == 0},
++                            "Error closing preferences window", timeout);
++}
++
++// Export of constants
++exports.ALLDAY = ALLDAY;
++exports.CANVAS_BOX = CANVAS_BOX;
++exports.EVENT_BOX = EVENT_BOX;
++
++// Export of functions
++exports.acceptSendingNotificationMail = acceptSendingNotificationMail;
++exports.back = back;
++exports.createCalendar = createCalendar;
++exports.deleteCalendars = deleteCalendars;
++exports.findEventsInNode = findEventsInNode;
++exports.forward = forward;
++exports.getEventBoxPath = getEventBoxPath;
++exports.goToDate = goToDate;
++exports.handleAddingAttachment = handleAddingAttachment;
++exports.handleOccurrenceDeletion = handleOccurrenceDeletion;
++exports.handleOccurrenceModification = handleOccurrenceModification;
++exports.handleParentDeletion = handleParentDeletion;
++exports.handleParentModification = handleParentModification;
++exports.setData = setData;
++exports.switchToView = switchToView;
++exports.open_lightning_prefs = open_lightning_prefs;
+diff -r 239bf16df296 mail/test/mozmill/shared-modules/timezone-utils.js
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/mail/test/mozmill/shared-modules/timezone-utils.js	Wed May 14 22:18:41 2014 +0530
+@@ -0,0 +1,92 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++//var MODULE_NAME = "timezone-utils";
++var calUtils = require("calendar-utils");
++var prefs = require("prefs");
++
++const sleep = 500;
++
++function switchAppTimezone(timezone) {
++  // change directly as Mac has different Lookup & XPath than Windows & Linux, bug 536605
++  prefs.preferences.setPref("calendar.timezone.local", timezone);
++}
++
++function verify(controller, dates, timezones, times) {
++  let dayView = '/id("messengerWindow")/id("tabmail-container")/id("tabmail")/'
++    + 'id("tabpanelcontainer")/id("calendarTabPanel")/id("calendarContent")/'
++    + 'id("calendarDisplayDeck")/id("calendar-view-box")/id("view-deck")/id("day-view")';
++  let dayStack = dayView + '/anon({"anonid":"mainbox"})/anon({"anonid":"scrollbox"})/'
++    + 'anon({"anonid":"daybox"})/[0]/anon({"anonid":"boxstack"})/anon({"anonid":"topbox"})/'
++    + '{"flex":"1"}';
++  let timeLine = dayView + '/anon({"anonid":"mainbox"})/anon({"anonid":"scrollbox"})/anon({"anonid":"timebar"})/'
++    + 'anon({"anonid":"topbox"})/';
++  let allowedDifference = 3;
++  
++  /* Event box' time can't be deduced from it's position in                    ----------------
++     xul element tree because for each event a box is laid over whole day and  |___spacer_____|
++     a spacer is added to push the event to it's correct location.             |__event_box___|
++     But timeline can be used to retrieve the position of a particular hour    |day continues |
++     on screen and it can be compared against the position of the event.       ----------------
++  */
++  for (let date = 0; date < dates.length; date++) {
++    calUtils.goToDate(controller, dates[date][0], dates[date][1], dates[date][2]);
++    
++    // find event with timezone tz
++    for (let tz = 0; tz < timezones.length; tz++) {
++      let found = false;
++      
++      let correctHour = times[date][tz][0];
++      let minutes = times[date][tz][1];
++      let day = times[date][tz][2];
++      
++      let timeNode = (new elementslib.Lookup(controller.window.document, 
++                                             timeLine + '[' + correctHour + ']')).getNode();
++      let timeY = timeNode.boxObject.y;
++      timeY += timeNode.boxObject.height * (minutes / 60);
++      
++      let stackNode;
++      let eventNodes = new Array();
++      
++      // same day
++      if(day == undefined) {
++        stackNode = (new elementslib.Lookup(controller.window.document, dayStack)).getNode();
++      }
++      
++      // following day
++      if(day != undefined && day == 1) {
++        calUtils.forward(controller, 1);
++        stackNode = (new elementslib.Lookup(controller.window.document, dayStack)).getNode();
++      }
++      
++      // previous day
++      if(day != undefined && day == -1) {
++        calUtils.back(controller, 1);
++        stackNode = (new elementslib.Lookup(controller.window.document, dayStack)).getNode();
++      }
++      
++      calUtils.findEventsInNode(stackNode, eventNodes);
++      
++      for each (node in eventNodes) {
++        if (Math.abs(timeY - node.boxObject.y) < allowedDifference &&
++                     timezones[tz] == node.mOccurrence.title) {
++          found = true;
++          break;
++        }
++      }
++      
++      if(day != undefined && day == 1) {
++        calUtils.back(controller, 1);
++      }
++      
++      if(day != undefined && day == -1) {
++        calUtils.forward(controller, 1);
++      }
++      controller.assertJS(found == true);
++    }
++  }
++}
++
++// Export of functions
++exports.switchAppTimezone = switchAppTimezone;
++exports.verify = verify;
+

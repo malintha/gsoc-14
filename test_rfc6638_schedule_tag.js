@@ -3,20 +3,26 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
  Components.utils.import("resource://testing-common/httpd.js");
- Components.utils.import("resource://gre/modules/NetUtil.jsm");
+ Components.utils.import("resource://gre/modules/NetUtil.jsm")
  Components.utils.import("resource://gre/modules/CSPUtils.jsm");
  Components.utils.import("resource://calendar/modules/calUtils.jsm");
  Components.utils.import("resource://gre/modules/FileUtils.jsm");
 
+ var fileContent=""; //using this temporary
+ var currentScheduleTag;
+ var currentEtag;
  function run_test() {
-  // start server
+  //start server
   server = new HttpServer(); 
   server.registerPathHandler("/calendar/event.ics", createResourceHandler);
+  server.registerPathHandler("/calendar/",initPropfindHandler);
   server.start(50001);
   add_test(test_CreateResource());
   do_test_pending();
-  run_next_test();
-
+  // run_next_test();
+  
+  // do_test_pending();
+  //print(data);
 }
 
 //method to create the item with calendar.addItem which is pointed to localhost
@@ -57,15 +63,16 @@ function createResourceHandler(request,response){
   //get the request and set the response data
   let is = request.bodyInputStream;
   let body = NetUtil.readInputStreamToString(is, is.available(),  { charset: "UTF-8" });
+  fileContent = body;
   let method = request.method;
   let matchheader = request.getHeader("If-None-Match");
   print(method+"||"+matchheader);
   print("request body : "+body);
   //write the logic for creating resources
   if(method=="PUT" && matchheader=="*" && body){
-    var file = FileUtils.getFile("TmpD", ["event.ics.tmp"]);
+    let file = FileUtils.getFile("TmpD", ["event.ics.tmp"]);
     file.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
-    //this createsTmpD the file at /tmp/
+    //this creates the file at /tmp/
     print("file_created at : "+file.path);
     //deleting after the test should also implement. no method found
     writeToFile(file,body);
@@ -79,16 +86,91 @@ function createResourceHandler(request,response){
 
 }
 
+function initPropfindHandler(request,response){
+
+  // let file = FileUtils.getFile("TmpD", "event.ics.tmp");
+  let is = request.bodyInputStream;
+  let body = NetUtil.readInputStreamToString(is, is.available(),  { charset: "UTF-8" });
+  print("path:"+request.path+"method:"+request.method+"\n"+body);
+  if(request.method=="REPORT"){
+    let file = FileUtils.getFile("TmpD", "event.ics.tmp");
+    if(file.exists()){
+      //get file content
+      let initPropResponse = '<D:response>'+
+                         '<D:href>'+request.path+'event.ics</D:href>'+
+                         '<D:propstat>'+
+                         '<D:status>HTTP/1.1 200 OK</D:status>'+
+                         '<D:prop>'+
+                         '<D:getetag>'+etagGenerator("new")+'</D:getetag>'+
+                         '<caldav:schedule-tag>'+scheduleTagGenerator("new")+'</caldav:schedule-tag>'+
+                         '<caldav:calendar-data>'+fileContent+
+                         '</caldav:calendar-data>'+
+                         '</D:prop>'+
+                         '</D:propstat>'+
+                        ' </D:response>';
+    }
+    else
+    {
+      response.setStatusLine(request.httpVersion, 404, "Not Found");
+    }
+}
+
+function scheduleTagGenerator(mode){
+  var newScheduleTag;
+  switch(mode){
+    case "new" : 
+        newScheduleTag = 488177;
+        currentScheduleTag = newScheduleTag;
+        print("mode:new"+currentScheduleTag);
+        break;
+    case "orgChange" :
+        newScheduleTag = currentScheduleTag+1;
+        print("mode:orgChange"+currentScheduleTag);
+        break;
+    case "attChange" :
+        newScheduleTag = currentScheduleTag;
+        print("mode:attChange"+currentScheduleTag);
+        break;
+  }
+}
+function etagGenerator(mode){
+  if(mode=="new"){
+    currentEtag = 127876;
+    return currentEtag;
+  }
+  if(mode=="change"){
+    return currentEtag+1;
+  }
+  else{
+    return currentEtag;
+  }
+}
+
 function writeToFile(file,data){
-  var ostream = FileUtils.openSafeFileOutputStream(file);
-  var converter = Components.classes["@mozilla.org/intl/scriptableunicodeconverter"].
+  let ostream = FileUtils.openSafeFileOutputStream(file);
+  let converter = Components.classes["@mozilla.org/intl/scriptableunicodeconverter"].
   createInstance(Components.interfaces.nsIScriptableUnicodeConverter);
   converter.charset = "UTF-8";
-  var istream = converter.convertToInputStream(data);
+  let istream = converter.convertToInputStream(data);
   NetUtil.asyncCopy(istream, ostream, function(status) {
     if (!Components.isSuccessCode(status)) {
       return;
     }
   // Data has been written to the file.
 });
+}
+
+//this is not working
+function readFile(file, callback)
+{
+  print("came"+file.path+file.exists());
+let channel = NetUtil.newChannel(file);
+ 
+ NetUtil.asyncFetch(channel, function(ainputStream, astatus) {
+   ok(Components.isSuccessCode(astatus),"file was read successfully");
+   print("sss");
+   let content = NetUtil.readInputStreamToString(ainputStream,
+     ainputStream.available());
+   callback(content);
+ });
 }

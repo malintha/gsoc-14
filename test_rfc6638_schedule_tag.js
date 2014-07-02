@@ -14,7 +14,7 @@
  function run_test() {
   //start server
   server = new HttpServer(); 
-  server.registerPathHandler("/calendar/a68cbf49.ics", createResourceHandler);
+  server.registerPathHandler("/calendar/1b05e158-631a-445f-8c5a-5743b5a05169.ics", createResourceHandler);
   server.registerPathHandler("/calendar/",initPropfindHandler);
   server.start(50001);
   add_test(test_CreateResource());
@@ -27,9 +27,11 @@
 function test_CreateResource(){
 
  let icalString ="BEGIN:VEVENT\n" + 
- "DTSTART:20140701T010000\n" +
- "DTEND:20140701T020000\n" +
- "END:VEVENT\n";
+                 "DTSTART:20140725T230000\n" +
+                 "DTEND:20140726T000000\n" +
+                 "LOCATION:Paris\n"+
+                 "TRANSP:OPAQUE\n"+
+                 "END:VEVENT";
 
  var createListener = {
   onOperationComplete: function(aCalendar,
@@ -43,7 +45,7 @@ function test_CreateResource(){
 };
 
 var item = createEventFromIcalString(icalString);
-item.id = "a68cbf49";
+item.id = "1b05e158-631a-445f-8c5a-5743b5a05169";
 let calmgr = cal.getCalendarManager();
 print(item.id);
 
@@ -68,7 +70,7 @@ function createResourceHandler(request,response){
   print("request body : "+body);
   //write the logic for creating resources
   if(method=="PUT" && matchheader=="*" && body){
-    let file = FileUtils.getFile("TmpD", ["a68cbf49.ics.tmp"]);
+    let file = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.tmp"]);
     file.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
     //this creates the file at /tmp/
     print("file_created at : "+file.path);
@@ -91,16 +93,19 @@ function initPropfindHandler(request,response){
   let body = NetUtil.readInputStreamToString(is, is.available(),  { charset: "UTF-8" });
   print("path:"+request.path+"method:"+request.method+"\n"+body);
 
+//problem at calDavRequestHandlers #984 this.calendar.addTargetCalendarItem
+//caldav #1116 this.mOfflineStorage.adoptItem(item, aListener);
   if(request.method=="REPORT"){
     let file = FileUtils.getFile("TmpD", "event.ics.tmp");
-    let initPropResponse = xmlHeader+ 
+    let initPropResponse = xmlHeader+"\n"+ 
+                         '<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
                          '<D:multistatus>\n'+
                          '<D:response>\n'+
-                         '<D:href>\n'+request.path+'a68cbf49.ics</D:href>\n'+
+                         '<D:href>'+request.path+'1b05e158-631a-445f-8c5a-5743b5a05169.ics</D:href>\n'+
                          '<D:propstat>\n'+
                           '<D:prop>\n'+
-                         '<D:getetag>"345678"</D:getetag>\n'+
-                         '<C:schedule-tag>"'+scheduleTagGenerator("new")+'"</C:schedule-tag>\n'+
+                         '<D:getetag>"'+'gcs00000000'+'"</D:getetag>\n'+
+                         // '<C:schedule-tag>"'+scheduleTagGenerator("new")+'"</C:schedule-tag>\n'+
                          '<C:calendar-data>'+fileContent+
                          '</C:calendar-data>\n'+
                          '</D:prop>\n'+

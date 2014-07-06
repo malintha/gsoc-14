@@ -2,176 +2,341 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
- Components.utils.import("resource://testing-common/httpd.js");
- Components.utils.import("resource://gre/modules/NetUtil.jsm")
- Components.utils.import("resource://gre/modules/CSPUtils.jsm");
- Components.utils.import("resource://calendar/modules/calUtils.jsm");
- Components.utils.import("resource://gre/modules/FileUtils.jsm");
+Components.utils.import("resource://gre/modules/Promise.jsm");
 
- var fileContent=""; //using this temporary
- var currentScheduleTag;
- var currentEtag;
- function run_test() {
-  //start server
-  server = new HttpServer(); 
-  server.registerPathHandler("/calendar/1b05e158-631a-445f-8c5a-5743b5a05169.ics", createResourceHandler);
-  server.registerPathHandler("/calendar/",initPropfindHandler);
-  server.start(50001);
-  add_test(test_CreateResource());
-  do_test_pending();
-  run_next_test();
-  
+Components.utils.import("resource://testing-common/httpd.js");
+Components.utils.import("resource://gre/modules/NetUtil.jsm")
+Components.utils.import("resource://gre/modules/CSPUtils.jsm");
+Components.utils.import("resource://calendar/modules/calUtils.jsm");
+Components.utils.import("resource://gre/modules/FileUtils.jsm");
+
+// TODO temporary logging
+Components.utils.import("resource:///modules/Services.jsm");
+Services.prefs.setBoolPref("javascript.options.showInConsole", true);
+Services.prefs.setBoolPref("browser.dom.window.dump.enabled", true);
+Services.prefs.setBoolPref("calendar.debug.log", true);
+Services.prefs.setBoolPref("calendar.debug.log.verbose", true);
+
+var fileContent=""; //using this temporary
+var currentScheduleTag;
+var currentEtag;
+const xmlHeader = '<?xml version="1.0" encoding="UTF-8"?>\n';
+
+function registerFakeUMimTyp() {
+    try {
+      Services.dirsvc.get("UMimTyp", Components.interfaces.nsIFile);
+    } catch (e) {
+      Services.dirsvc.registerProvider({
+        getFile: function(prop, persist) {
+          if (prop == "UMimTyp") {
+            var mimeTypes = Services.dirsvc.get("ProfD", Ci.nsIFile);
+            mimeTypes.append("mimeTypes.rdf");
+            return mimeTypes;
+          }
+          throw Components.results.NS_ERROR_FAILURE;
+        }
+      });
+    }
 }
+
+
+function run_test() {
+    do_get_profile();
+    registerFakeUMimTyp();
+
+    //start server
+    var server = new HttpServer(); 
+    server.registerPathHandler("/calendar/xpcshell/1b05e158-631a-445f-8c5a-5743b5a05169.ics", createResourceHandler);
+    server.registerPathHandler("/calendar/xpcshell/1b05e158-631a-445f-8c5a-5743b5a05167.ics", createResourceHandler);
+    server.registerPathHandler("/calendar/", calendarHandler);
+    server.registerPathHandler("/calendar/xpcshell/", initPropfindHandler);
+    server.registerPathHandler("/users/xpcshell/",principalHandler);
+    server.start(50001);
+
+    do_register_cleanup(() => server.stop(() => {}));
+    cal.getCalendarManager().startup({onResult: function() {
+        run_next_test();
+    }});
+}
+
+function waitForLoad(calendar) {
+    let deferred = Promise.defer();
+    let obs = cal.createAdapter(Components.interfaces.calIObserver, {
+      onLoad: function() {
+        calendar.removeObserver(obs);
+        deferred.resolve();
+      }
+    });
+    calendar.addObserver(obs);
+    return deferred.promise;
+}
+
+function promiseAddItem(item, calendar) {
+    let deferred = Promise.defer();
+    calendar.addItem(item, {
+      onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
+        dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
+        deferred.resolve(aStatus);
+      }
+    });
+    return deferred.promise;
+}
+
 
 //method to create the item with calendar.addItem which is pointed to localhost
-function test_CreateResource(){
+add_task(function test_CreateResource(){
+    let icalString = "BEGIN:VEVENT\n" + 
+                     "DTSTART:20140725T230000\n" +
+                     "DTEND:20140726T000000\n" +
+                     "LOCATION:Paris\n"+
+                     "TRANSP:OPAQUE\n"+
+                     "END:VEVENT";
 
- let icalString ="BEGIN:VEVENT\n" + 
-                 "DTSTART:20140725T230000\n" +
-                 "DTEND:20140726T000000\n" +
-                 "LOCATION:Paris\n"+
-                 "TRANSP:OPAQUE\n"+
-                 "END:VEVENT";
 
- var createListener = {
-  onOperationComplete: function(aCalendar,
-    aStatus,
-    aOperationType,
-    aId,
-    aDetail) {
-    print("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail);
+    var item = createEventFromIcalString(icalString);
+    item.id = "1b05e158-631a-445f-8c5a-5743b5a05169";
+    let calmgr = cal.getCalendarManager();
 
-  }
-};
+    let calendar = calmgr.createCalendar("caldav", Services.io.newURI("http://localhost:50001/calendar/xpcshell", null, null));
+    calendar.name="testCalendar";
+    calmgr.registerCalendar(calendar);
 
-var item = createEventFromIcalString(icalString);
-item.id = "1b05e158-631a-445f-8c5a-5743b5a05169";
-let calmgr = cal.getCalendarManager();
-print(item.id);
+    yield waitForLoad(calendar);
+    yield promiseAddItem(item, calendar);
 
-let calendar = calmgr.createCalendar("caldav", Services.io.newURI("http://localhost:50001/calendar", null, null));
-calendar.name="testCalendar";
-calendar.addItem(item, createListener);
-print("event added");
-//do_test_finished(); //uncomment this part to pass the test. commented to see log outputs.
-
-}
+});
 
 //handler for incoming requests to http://localhost:50001/calendar/event.ics
-function createResourceHandler(request,response){ 
-  print("createResource Handler");
-  //get the request and set the response data
-  let is = request.bodyInputStream;
-  let body = NetUtil.readInputStreamToString(is, is.available(),  { charset: "UTF-8" });
-  fileContent = body;
-  let method = request.method;
-  let matchheader = request.getHeader("If-None-Match");
-  print(method+"||"+matchheader);
-  print("request body : "+body);
-  //write the logic for creating resources
-  if(method=="PUT" && matchheader=="*" && body){
-    let file = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.tmp"]);
-    file.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
-    //this creates the file at /tmp/
-    print("file_created at : "+file.path);
-    //deleting after the test should also implement. no method found
-    writeToFile(file,body);
-    response.setStatusLine(request.httpVersion, 201, "resource created");
-    response.write("created");
-    //after this, there will be a sequence of requests. create those handlers :|
-  }
-  else{
-    response.setStatusLine(request.httpVersion, 400, "Bad Request");
-  }
-
+function createResourceHandler(request,response) {
+    try {
+    dump("createResource Handler");
+    //get the request and set the response data
+    let is = request.bodyInputStream;
+    let body = NetUtil.readInputStreamToString(is, is.available(),  { charset: "UTF-8" });
+    fileContent = body;
+    let method = request.method;
+    let matchheader = request.getHeader("If-None-Match");
+    dump(method+"||"+matchheader);
+    dump("request body : "+body);
+    //write the logic for creating resources
+    if(method=="PUT" && matchheader=="*" && body){
+        dump("GETFILE: 1\n");
+        let file = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.tmp"]);
+        file.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
+        //this creates the file at /tmp/
+        dump("file_created at : "+file.path);
+        //deleting after the test should also implement. no method found
+        writeToFile(file,body);
+        response.setStatusLine(request.httpVersion, 201, "resource created");
+        response.write("");
+        //after this, there will be a sequence of requests. create those handlers :|
+    } else{
+        response.setStatusLine(request.httpVersion, 400, "Bad Request");
+    }
+    } catch (e) {
+        dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
+    }
 }
 
 function initPropfindHandler(request,response){
 
-  let is = request.bodyInputStream;
-  const xmlHeader = '<?xml version="1.0" encoding="UTF-8"?>\n';
-  let body = NetUtil.readInputStreamToString(is, is.available(),  { charset: "UTF-8" });
-  print("path:"+request.path+"method:"+request.method+"\n"+body);
+    let body;
+    try {
+        let is = request.bodyInputStream;
+        body = NetUtil.readInputStreamToString(is, is.available(),  { charset: "UTF-8" });
+    } catch (e) {
+        body = "";
+    }
 
-//problem at calDavRequestHandlers #984 this.calendar.addTargetCalendarItem
-//caldav #1116 this.mOfflineStorage.adoptItem(item, aListener);
-  if(request.method=="REPORT"){
-    let file = FileUtils.getFile("TmpD", "event.ics.tmp");
-    let initPropResponse = xmlHeader+"\n"+ 
-                         '<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
-                         '<D:multistatus>\n'+
-                         '<D:response>\n'+
-                         '<D:href>'+request.path+'1b05e158-631a-445f-8c5a-5743b5a05169.ics</D:href>\n'+
-                         '<D:propstat>\n'+
-                          '<D:prop>\n'+
-                         '<D:getetag>"'+'gcs00000000'+'"</D:getetag>\n'+
-                         // '<C:schedule-tag>"'+scheduleTagGenerator("new")+'"</C:schedule-tag>\n'+
-                         '<C:calendar-data>'+fileContent+
-                         '</C:calendar-data>\n'+
-                         '</D:prop>\n'+
-                         '<D:status>HTTP/1.1 200 OK</D:status>\n'+
-                         '</D:propstat>\n'+
-                        ' </D:response>\n'+
-                        '</D:multistatus>\n';
-    print(initPropResponse);
-    //calDavRequestHandlers #759
-    response.setStatusLine(request.httpVersion, 207, "Multi-Status");
-    response.setHeader("content-type","text/xml");
-    response.write(initPropResponse);
-    //saxParser throws fatal error on the response
+    dump("path:"+request.path+"method:"+request.method+"\n"+body);
+    try {
+
+    //problem at calDavRequestHandlers #984 this.calendar.addTargetCalendarItem
+    //caldav #1116 this.mOfflineStorage.adoptItem(item, aListener);
+    if (request.method == "PROPFIND" && body.indexOf("current-user-prin") > -1) {
+        let resText  = '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:b="http://calendarserver.org/ns/" xmlns:D="DAV:">\n' +
+                       '   <D:response>\n' +
+                       '     <D:href>' + request.path + '</D:href>\n' +
+                       '     <D:propstat>\n' +
+                       '       <D:status>HTTP/1.1 200 OK</D:status>\n' +
+                       '       <D:prop>\n' +
+                       '         <D:resourcetype>\n' +
+                       '           <D:collection/>\n' +
+                       '           <calendar xmlns="urn:ietf:params:xml:ns:caldav"/>\n' +
+                       '         </D:resourcetype>\n' +
+                       '         <D:owner xmlns:D="DAV:">\n' +
+                       '           <D:href>/users/xpcshell/</D:href>\n' +
+                       '         </D:owner>\n' +
+                       '         <D:current-user-principal xmlns:D="DAV:">\n' +
+                       '           <D:href>/users/xpcshell</D:href>\n' +
+                       '         </D:current-user-principal>\n' +
+                       '         <n1:supported-calendar-component-set xmlns:n1="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
+                       '           <n1:comp name="VEVENT"/>\n' +
+                       '           <n1:comp name="VTODO"/>\n' +
+                       '         </n1:supported-calendar-component-set>\n' +
+                       '         <b:getctag>1378022830</b:getctag>\n' +
+                       '       </D:prop>\n' +
+                       '     </D:propstat>\n' +
+                       '   </D:response>\n' +
+                       ' </D:multistatus>';
+        response.setStatusLine(request.httpVersion, 207, "Multi-Status");
+        response.setHeader("content-type","text/xml");
+        response.write(resText);
+    } else if (request.method == "PROPFIND" && body.indexOf("getetag") > -1) {
+        let initPropResponse = xmlHeader+"\n"+ 
+                             '<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
+                             '<D:response>\n'+
+                             '<D:href>'+request.path+'1b05e158-631a-445f-8c5a-5743b5a05167.ics</D:href>\n'+
+                             '<D:propstat>\n'+
+                              '<D:prop>\n'+
+                             '<D:getetag>"'+'gcs00000000'+'"</D:getetag>\n'+
+                             // '<C:schedule-tag>"'+scheduleTagGenerator("new")+'"</C:schedule-tag>\n'+
+                             '<C:calendar-data>'+
+                             "BEGIN:VEVENT\n" + 
+                             "DTSTART:20140725T230000\n" +
+                             "DTEND:20140726T000000\n" +
+                             "LOCATION:Paris\n"+
+                             "TRANSP:OPAQUE\n"+
+                             "END:VEVENT" +
+                             '</C:calendar-data>\n'+
+                             '</D:prop>\n'+
+                             '<D:status>HTTP/1.1 200 OK</D:status>\n'+
+                             '</D:propstat>\n'+
+                            ' </D:response>\n'+
+                            '</D:multistatus>\n';
+        response.setStatusLine(request.httpVersion, 207, "Multi-Status");
+        response.setHeader("content-type","text/xml");
+        response.write(initPropResponse);
+        
+    } else if (request.method=="REPORT") {
+        //let file = FileUtils.getFile("TmpD", ["event.ics.tmp"]);
+        let initPropResponse = xmlHeader+"\n"+ 
+                             '<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
+                             '<D:response>\n'+
+                             '<D:href>'+request.path+'1b05e158-631a-445f-8c5a-5743b5a05169.ics</D:href>\n'+
+                             '<D:propstat>\n'+
+                              '<D:prop>\n'+
+                             '<D:getetag>"'+'gcs00000000'+'"</D:getetag>\n'+
+                             // '<C:schedule-tag>"'+scheduleTagGenerator("new")+'"</C:schedule-tag>\n'+
+                             '<C:calendar-data>'+fileContent+
+                             '</C:calendar-data>\n'+
+                             '</D:prop>\n'+
+                             '<D:status>HTTP/1.1 200 OK</D:status>\n'+
+                             '</D:propstat>\n'+
+                            ' </D:response>\n'+
+                            '</D:multistatus>\n';
+
+        //calDavRequestHandlers #759
+        response.setStatusLine(request.httpVersion, 207, "Multi-Status");
+        response.setHeader("content-type","text/xml");
+        response.write(initPropResponse);
+        //saxParser throws fatal error on the response
+    } else {
+        dump("### GOT INVALID METHOD " + request.method + "\n");
+        response.setStatusLine(request.httpVersion, 400, "Bad Request");
+    }
+    } catch (e) {
+        dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
+    }
 }
+
+function calendarHandler(request,response){
+    if (request.method == "OPTIONS") {
+        response.setStatusLine(request.httpVersion, "200", "OK");
+        response.setHeader("DAV", "1, 2, access-control, calendar-access, calendar-schedule, calendar-auto-schedule, calendar-proxy, calendar-query-extended, extended-mkcol, calendarserver-principal-property-search")
+        response.write("");
+    } else {
+        dump("### GOT INVALID METHOD " + request.method + "\n");
+        response.setStatusLine(request.httpVersion, 400, "Bad Request");
+    }
+}
+
+function principalHandler(request, response) {
+    if (request.method == "PROPFIND") {
+      var respText = xmlHeader +
+        '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
+        '  <D:response>\n' +
+        '    <D:href>/calendar/xpcshell/</D:href>\n' +
+        '    <D:propstat>\n' +
+        '      <D:status>HTTP/1.1 200 OK</D:status>\n' +
+        '      <D:prop>\n' +
+        '        <a:calendar-home-set>\n' +
+        '          <D:href xmlns:D="DAV:">/calendar/</D:href>\n' +
+        '        </a:calendar-home-set>\n' +
+        '        <a:schedule-inbox-URL>\n' +
+        '          <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
+        '        </a:schedule-inbox-URL>\n' +
+        '        <a:schedule-outbox-URL>\n' +
+        '          <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
+        '        </a:schedule-outbox-URL>\n' +
+        '        <a:calendar-user-address-set>\n' +
+        '          <D:href xmlns:D="DAV:">mailto:mozilla@kewis.ch</D:href>\n' +
+        '          <D:href xmlns:D="DAV:">mailto:uni@kewis.ch</D:href>\n' +
+        '          <D:href xmlns:D="DAV:">mailto:kewisch@kewis.ch</D:href>\n' +
+        '          <D:href xmlns:D="DAV:">/SOGo/dav/kewisch/</D:href>\n' +
+        '        </a:calendar-user-address-set>\n' +
+        '      </D:prop>\n' +
+        '    </D:propstat>\n' +
+        '  </D:response>\n' +
+        '</D:multistatus>';
+        response.setStatusLine(request.httpVersion, 207, "Multi-Status");
+        response.write(respText);
+    } else {
+        dump("### PRINCIPAL  HANDLER GOT INVALID METHOD " + request.method + "\n");
+        response.setStatusLine(request.httpVersion, 400, "Bad Request");
+    }
 }
 
 function scheduleTagGenerator(mode){
-  var newScheduleTag;
-  switch(mode){
-    case "new" : 
-        newScheduleTag = 488177;
-        currentScheduleTag = newScheduleTag;
-        print("mode:new"+currentScheduleTag);
-        break;
-    case "orgChange" :
-        newScheduleTag = currentScheduleTag+1;
-        print("mode:orgChange"+currentScheduleTag);
-        break;
-    case "attChange" :
-        newScheduleTag = currentScheduleTag;
-        print("mode:attChange"+currentScheduleTag);
-        break;   
-  }
- return newScheduleTag; 
+    var newScheduleTag;
+    switch(mode) {
+        case "new" : 
+            newScheduleTag = 488177;
+            currentScheduleTag = newScheduleTag;
+            dump("mode:new"+currentScheduleTag);
+            break;
+        case "orgChange" :
+            newScheduleTag = currentScheduleTag+1;
+            dump("mode:orgChange"+currentScheduleTag);
+            break;
+        case "attChange" :
+            newScheduleTag = currentScheduleTag;
+            dump("mode:attChange"+currentScheduleTag);
+            break;   
+   }
+   return newScheduleTag; 
 }
 function etagGenerator(mode){
-  if(mode=="new"){
-    currentEtag = 127876;
-    return currentEtag;
-  }
-  if(mode=="change"){
-    return currentEtag+1;
-  }
-  else{
-    return currentEtag;
-  }
+    if(mode=="new") {
+        currentEtag = 127876;
+        return currentEtag;
+    }
+    if(mode=="change"){
+        return currentEtag+1;
+    } else {
+        return currentEtag;
+    }
 }
 
 function writeToFile(file,data){
-  let ostream = FileUtils.openSafeFileOutputStream(file);
-  let converter = Components.classes["@mozilla.org/intl/scriptableunicodeconverter"].
-  createInstance(Components.interfaces.nsIScriptableUnicodeConverter);
-  converter.charset = "UTF-8";
-  let istream = converter.convertToInputStream(data);
-  NetUtil.asyncCopy(istream, ostream, function(status) {
-    if (!Components.isSuccessCode(status)) {
-      return;
-    }
-  // Data has been written to the file.
-});
+    let ostream = FileUtils.openSafeFileOutputStream(file);
+    let converter = Components.classes["@mozilla.org/intl/scriptableunicodeconverter"].
+    createInstance(Components.interfaces.nsIScriptableUnicodeConverter);
+    converter.charset = "UTF-8";
+    let istream = converter.convertToInputStream(data);
+    NetUtil.asyncCopy(istream, ostream, function(status) {
+      if (!Components.isSuccessCode(status)) {
+        return;
+      }
+      // Data has been written to the file.
+    });
 }
 
 //this is not working
+/*
 function readFile(file, callback)
 {
-  print("came"+file.path+file.exists());
+  dump("came"+file.path+file.exists());
 let channel = NetUtil.newChannel(file);
  
  NetUtil.asyncFetch(channel, function(ainputStream, astatus) {
@@ -181,3 +346,4 @@ let channel = NetUtil.newChannel(file);
    callback(content);
  });
 }
+*/

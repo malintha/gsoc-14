@@ -47,7 +47,7 @@ function run_test() {
     //start server
     var server = new HttpServer(); 
     server.registerPathHandler("/calendar/xpcshell/1b05e158-631a-445f-8c5a-5743b5a05169.ics", createResourceHandler);
-    server.registerPathHandler("/calendar/xpcshell/1b05e158-631a-445f-8c5a-5743b5a05167.ics", createResourceHandler);
+    //server.registerPathHandler("/calendar/xpcshell/1b05e158-631a-445f-8c5a-5743b5a05167.ics", createResourceHandler);
     server.registerPathHandler("/calendar/", calendarHandler);
     server.registerPathHandler("/calendar/xpcshell/", initPropfindHandler);
     server.registerPathHandler("/users/xpcshell/",principalHandler);
@@ -59,17 +59,21 @@ function run_test() {
     }});
 }
 
-function waitForLoad(calendar) {
-    let deferred = Promise.defer();
-    let obs = cal.createAdapter(Components.interfaces.calIObserver, {
-      onLoad: function() {
-        calendar.removeObserver(obs);
-        deferred.resolve();
-      }
-    });
-    calendar.addObserver(obs);
-    return deferred.promise;
-}
+    function waitForLoad(calendar) {
+        let deferred = Promise.defer();
+        let caldavCheckSeverInfo = calendar.wrappedJSObject.completeCheckServerInfo;
+        let wrapper = function(listener, error) {
+            if (Components.isSuccessCode(error)) {
+                deferred.resolve();
+             } else {
+                deferred.reject();
+             }   
+             calendar.wrappedJSObject.completeCheckServerInfo = caldavCheckServerInfo;
+             caldavCheckServerInfo(listener, error);
+         }; 
+         calendar.wrappedJSObject.completeCheckServerInfo = wrapper;
+        return deferred.promise;
+    } 
 
 function promiseAddItem(item, calendar) {
     let deferred = Promise.defer();
@@ -92,7 +96,6 @@ add_task(function test_CreateResource(){
                      "TRANSP:OPAQUE\n"+
                      "END:VEVENT";
 
-
     var item = createEventFromIcalString(icalString);
     item.id = "1b05e158-631a-445f-8c5a-5743b5a05169";
     let calmgr = cal.getCalendarManager();
@@ -109,7 +112,7 @@ add_task(function test_CreateResource(){
 //handler for incoming requests to http://localhost:50001/calendar/event.ics
 function createResourceHandler(request,response) {
     try {
-    dump("createResource Handler");
+    dump("In createResource Handler");
     //get the request and set the response data
     let is = request.bodyInputStream;
     let body = NetUtil.readInputStreamToString(is, is.available(),  { charset: "UTF-8" });

@@ -224,6 +224,7 @@ function run_test() {
     return deferred.promise;
   }
 
+
 //method to create the item with calendar.addItem which is pointed to localhost
 add_task(test_CreateResource);
 
@@ -355,6 +356,37 @@ function createResourceHandler(request,response) {
     }
   }
 
+  function scheduleTagGenerator(mode){
+    var newScheduleTag;
+    switch(mode) {
+      case "new" : 
+      newScheduleTag = 488177;
+      currentScheduleTag = newScheduleTag;
+      dump("mode:new"+currentScheduleTag);
+      break;
+      case "orgChange" :
+      newScheduleTag = currentScheduleTag+1;
+      dump("mode:orgChange"+currentScheduleTag);
+      break;
+      case "attChange" :
+      newScheduleTag = currentScheduleTag;
+      dump("mode:attChange"+currentScheduleTag);
+      break;   
+    }
+    return newScheduleTag; 
+  }
+  function etagGenerator(mode){
+    if(mode=="new") {
+      currentEtag = 127876;
+      return currentEtag;
+    }
+    if(mode=="change"){
+      return currentEtag+1;
+    } else {
+      return currentEtag;
+    }
+  }
+
   function writeToFile(file,data){
     let ostream = FileUtils.openSafeFileOutputStream(file);
     let converter = Components.classes["@mozilla.org/intl/scriptableunicodeconverter"].
@@ -369,3 +401,18 @@ function createResourceHandler(request,response) {
     });
   }
 
+//this is not working
+/*
+function readFile(file, callback)
+{
+  dump("came"+file.path+file.exists());
+let channel = NetUtil.newChannel(file);
+ 
+ NetUtil.asyncFetch(channel, function(ainputStream, astatus) {
+   ok(Components.isSuccessCode(astatus),"file was read successfully");
+   let content = NetUtil.readInputStreamToString(ainputStream,
+     ainputStream.available());
+   callback(content);
+ });
+}
+*/

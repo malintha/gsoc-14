@@ -85,9 +85,6 @@ var resTemplate = {
 
   propPropfind : function propPropfind(request){
 
-    item = createEventFromIcalString(calDavProperties.icalString);
-    item.id = calDavProperties.itemID;
-
     let responseQuery = xmlHeader+"\n"+ 
     '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
     '     <D:response>\n'+

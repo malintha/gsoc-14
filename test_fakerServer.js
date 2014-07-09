@@ -144,12 +144,11 @@ principalSearch : function principalSearch(request){
       '        <a:schedule-outbox-URL>\n' +
       '          <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
       '        </a:schedule-outbox-URL>\n' +
-      '        <a:calendar-user-address-set>\n' +
-      '          <D:href xmlns:D="DAV:">mailto:mozilla@kewis.ch</D:href>\n' +
-      '          <D:href xmlns:D="DAV:">mailto:uni@kewis.ch</D:href>\n' +
-      '          <D:href xmlns:D="DAV:">mailto:kewisch@kewis.ch</D:href>\n' +
-      '          <D:href xmlns:D="DAV:">/SOGo/dav/kewisch/</D:href>\n' +
-      '        </a:calendar-user-address-set>\n' +
+'        <a:calendar-user-address-set>\n';
+      for (var i = 0; i < calDavProperties.userAddressSet.length; i++) {
+       responseQuery += '<D:href xmlns:D="DAV:">mailto:'+calDavProperties.userAddressSet[i]+'</D:href>\n';
+      }
+      responseQuery += '</a:calendar-user-address-set>\n' +
       '      </D:prop>\n' +
       '    </D:propstat>\n' +
       '  </D:response>\n' +
@@ -346,7 +345,7 @@ function createResourceHandler(request,response) {
           dump("came here6");
     if (request.method == "PROPFIND") {
 
-      let principalResText = calDavProperties.principalSearch(request);
+      let principalResText = resTemplate.principalSearch(request);
       response.setStatusLine(request.httpVersion, 207, "Multi-Status");
       response.write(principalResText);
     } else {

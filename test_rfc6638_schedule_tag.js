@@ -16,12 +16,11 @@ Services.prefs.setBoolPref("browser.dom.window.dump.enabled", true);
 Services.prefs.setBoolPref("calendar.debug.log", true);
 Services.prefs.setBoolPref("calendar.debug.log.verbose", true);
 
-var item; //using this temporary
 var currentScheduleTag;
 var currentEtag;
 const xmlHeader = '<?xml version="1.0" encoding="UTF-8"?>\n';
-var item;
-
+var calItem;
+var calendar;
 var serverProperties = {
   port : 50001,
   name : "xpcshellServer"
@@ -35,18 +34,20 @@ var calDavProperties = {
   scheduleOutboxURL : "/calendar/xpcshell",
   userPrincipalHref : "/users/xpcshell/",
 
-  icalString :      "BEGIN:VEVENT\n" + 
-                    "DTSTART:20140725T230000\n" +
-                    "DTEND:20140726T000000\n" +
-                    "LOCATION:Paris\n"+
-                    "TRANSP:OPAQUE\n"+
-                    "END:VEVENT",
-
+  icalString :      'BEGIN:VEVENT\n' + 
+                    'DTSTART:20140725T230000\n' +
+                    'DTEND:20140726T000000\n' +
+                    'LOCATION:Paris\n'+
+                    'TRANSP:OPAQUE\n'+
+                    'ORGANIZER;CN=Organizer Name;SENT-BY="mailto:malinthak2@gmail.com":mailto:malinthak2@gmail.com\n'+
+                    'ATTENDEE;CN=Attendee1 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:mozilla@kewis.ch\n'+
+                    'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:uni@kewis.ch\n'+
+                    'END:VEVENT\n',
   itemID : "1b05e158-631a-445f-8c5a-5743b5a05169",
   supportedComps : ["VEVENT","VTODO"],
-  userAddressSet : ["mozilla@kewis.ch","uni@kewis.ch","kewisch@kewis.ch","/SOGo/dav/kewisch/"],
+  userAddressSet : ["mozilla@kewis.ch","uni@kewis.ch","kewisch@kewis.ch","/SOGo/dav/kewisch/","malinthak2@gmail.com"],
   getetag : 2314233447,
-  scheduletag : ""
+  scheduletag : 12345
 };
 
 var resTemplate = {
@@ -84,6 +85,9 @@ var resTemplate = {
   },
 
   propPropfind : function propPropfind(request){
+
+    item = createEventFromIcalString(calDavProperties.icalString);
+    item.id = calDavProperties.itemID;
 
     let responseQuery = xmlHeader+"\n"+ 
     '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
@@ -124,9 +128,8 @@ var resTemplate = {
     return responseQuery;
 },
 
-principalSearch : function principalSearch(request){
-    let responseQuery = xmlHeader +
-      '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
+principalProperty : function principalProperty(request){
+    let responseQuery = '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
       '  <D:response>\n' +
       '    <D:href>/calendar/xpcshell/</D:href>\n' +
       '    <D:propstat>\n' +
@@ -141,17 +144,17 @@ principalSearch : function principalSearch(request){
       '        <a:schedule-outbox-URL>\n' +
       '          <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
       '        </a:schedule-outbox-URL>\n' +
-      '        <a:calendar-user-address-set>\n' +
-      '          <D:href xmlns:D="DAV:">mailto:mozilla@kewis.ch</D:href>\n' +
-      '          <D:href xmlns:D="DAV:">mailto:uni@kewis.ch</D:href>\n' +
-      '          <D:href xmlns:D="DAV:">mailto:kewisch@kewis.ch</D:href>\n' +
-      '          <D:href xmlns:D="DAV:">/SOGo/dav/kewisch/</D:href>\n' +
-      '        </a:calendar-user-address-set>\n' +
+      '        <a:calendar-user-address-set>\n';
+
+      for (var i = 0; i < calDavProperties.userAddressSet.length; i++) {
+       responseQuery += '<D:href xmlns:D="DAV:">mailto:'+calDavProperties.userAddressSet[i]+'</D:href>\n';
+      }
+      responseQuery += '</a:calendar-user-address-set>\n' +
       '      </D:prop>\n' +
       '    </D:propstat>\n' +
       '  </D:response>\n' +
       '</D:multistatus>';
-      dump("responseQuery\n"+responseQuery);
+      //dump("responseQuery\n"+responseQuery);
       return responseQuery;
   }
 
@@ -227,26 +230,51 @@ add_task(test_CreateResource);
 
 function test_CreateResource(){
   //get the string from caldavProperties
-  let icalString = "BEGIN:VEVENT\n" + 
-  "DTSTART:20140725T230000\n" +
-  "DTEND:20140726T000000\n" +
-  "LOCATION:Paris\n"+
-  "TRANSP:OPAQUE\n"+
-  "END:VEVENT";
+  let icalString = calDavProperties.icalString;
 
-  var item = createEventFromIcalString(icalString);
-  item.id = "1b05e158-631a-445f-8c5a-5743b5a05169";
+  calItem = createEventFromIcalString(icalString);
+  calItem.id = "1b05e158-631a-445f-8c5a-5743b5a05169";
   let calmgr = cal.getCalendarManager();
   let calendarURL = calDavProperties.basePath+calDavProperties.scheduleInboxURL;
   dump(calendarURL);
-  let calendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
+  calendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
   calendar.name="testCalendar";
   calmgr.registerCalendar(calendar);
-
+  // xpc_calendar = calendar;
   yield waitForInit(calendar);
-  yield promiseAddItem(item, calendar);
+  yield promiseAddItem(calItem, calendar);
 
 }
+
+//organizer changes the event
+add_task(function(){
+  yield promise_org_ChangeEvent();
+  dump("yieldedmodifyItem");
+});
+
+function promise_org_ChangeEvent(){
+let deferred = Promise.defer(); 
+let oldItem = calItem;
+// oldItem.id 
+ let newItem = calItem.clone();
+ //change etag
+// dump("modify:"+etagGenerator("modify"));
+ calDavProperties.getetag++;
+ dump("newEtag:"+calDavProperties.getetag);
+ newItem.title = "NewTitle";
+ dump("xpcshell:"+calendar.name);
+ dump("oldtem:"+oldItem.title+":ID:"+oldItem.id);
+ dump("newItem:"+newItem.title+":ID:"+newItem.id);
+ calendar.modifyItem(newItem,oldItem,{
+      onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
+        dump("onModifyComplete:");
+        deferred.resolve(aStatus);
+      }
+    });
+ return deferred.promise;
+  }
+
+
 
 //handler for incoming requests to http://localhost:50001/calendar/event.ics
 function createResourceHandler(request,response) {
@@ -263,12 +291,18 @@ function createResourceHandler(request,response) {
     //write the logic for creating resources
     if(method=="PUT" && matchheader=="*" && body){
       dump("GETFILE: 1\n");
-      let file = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.tmp"]);
-      file.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
+      let fileOrg = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.org"]);
+      let fileAtt1 = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.att1"]);
+      let fileAtt2 = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.att2"]);
+      fileOrg.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
+      fileAtt1.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
+      fileAtt2.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
         //this creates the file at /tmp/
-        dump("file_created at : "+file.path);
+        //dump("file_created at : "+file.path+" content:"+body);
         //deleting after the test should also implement. no method found
-        writeToFile(file,body);
+        writeToFile(fileOrg,body);
+        writeToFile(fileAtt1,body);
+        writeToFile(fileAtt2,body);
         response.setStatusLine(request.httpVersion, 201, "resource created");
         response.write("");
         //after this, there will be a sequence of requests. create those handlers :|
@@ -276,7 +310,7 @@ function createResourceHandler(request,response) {
         response.setStatusLine(request.httpVersion, 400, "Bad Request");
       }
     } catch (e) {
-      dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
+      dump("\n\n#### EEE: in createResourceHandler" + e + e.fileName + e.lineNumber +"\n");
     }
   }
 
@@ -312,9 +346,10 @@ function createResourceHandler(request,response) {
    } 
 
    else if (request.method=="REPORT") {
+    //modified item request also comes here.
     dump("camehere4");
     let reportResText = resTemplate.reportPropfind(request);
-        dump("camehere5"+reportResText);
+        dump("camehere5:changed etag"+reportResText);
         //calDavRequestHandlers #759
         response.setStatusLine(request.httpVersion, 207, "Multi-Status");
         response.setHeader("content-type","text/xml");
@@ -341,10 +376,12 @@ function createResourceHandler(request,response) {
   }
 
   function principalHandler(request, response) {
-          dump("came here6");
+          dump("camehere6");
     if (request.method == "PROPFIND") {
+dump("\ncamehere7");
 
-      let principalResText = calDavProperties.principalSearch(request);
+      let principalResText = resTemplate.principalProperty(request);
+      dump("princtest");
       response.setStatusLine(request.httpVersion, 207, "Multi-Status");
       response.write(principalResText);
     } else {
@@ -353,6 +390,7 @@ function createResourceHandler(request,response) {
     }
   }
 
+ 
   function scheduleTagGenerator(mode){
     var newScheduleTag;
     switch(mode) {
@@ -372,17 +410,19 @@ function createResourceHandler(request,response) {
     }
     return newScheduleTag; 
   }
-  function etagGenerator(mode){
-    if(mode=="new") {
-      currentEtag = 127876;
-      return currentEtag;
-    }
-    if(mode=="change"){
-      return currentEtag+1;
-    } else {
-      return currentEtag;
-    }
-  }
+  // function etagGenerator(mode){
+  //   if(mode=="new") {
+  //     currentEtag = calDavProperties.getetag;
+  //     return currentEtag;
+  //   }
+  //   if(mode=="modify"){
+  //     currentEtag++;
+  //     dump("new Etag:"+cu);
+  //     return currentEtag;
+  //   } else {
+  //     return currentEtag;
+  //   }
+  // }
 
   function writeToFile(file,data){
     let ostream = FileUtils.openSafeFileOutputStream(file);
@@ -397,6 +437,7 @@ function createResourceHandler(request,response) {
       // Data has been written to the file.
     });
   }
+
 
 //this is not working
 /*

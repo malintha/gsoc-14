@@ -41,7 +41,7 @@ var calDavProperties = {
                     'TRANSP:OPAQUE\n'+
                     'ORGANIZER;CN=Organizer Name;SENT-BY="mailto:malinthak2@gmail.com":mailto:malinthak2@gmail.com\n'+
                     'ATTENDEE;CN=Attendee1 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:mozilla@kewis.ch\n'+
-                    'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:uni@kewis.ch\n'+
+                    'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee@example.com\n'+
                     'END:VEVENT\n',
   itemID : "1b05e158-631a-445f-8c5a-5743b5a05169",
   supportedComps : ["VEVENT","VTODO"],
@@ -96,7 +96,7 @@ var resTemplate = {
     '         <D:propstat>\n'+
     '           <D:prop>\n'+
     '             <D:getetag>"'+calDavProperties.getetag+'"</D:getetag>\n'+
- // '             <C:schedule-tag>"'+scheduleTagGenerator("new")+'"</C:schedule-tag>\n'+
+    '             <C:schedule-tag>"'+calDavProperties.scheduletag+'"</C:schedule-tag>\n'+
     '             <C:calendar-data>'+item+'</C:calendar-data>\n'+
     '           </D:prop>\n'+
     '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
@@ -115,7 +115,7 @@ var resTemplate = {
         '     <D:propstat>\n'+
         '        <D:prop>\n'+
         '         <D:getetag>"'+calDavProperties.getetag+'"</D:getetag>\n'+
-      // '<C:schedule-tag>"'+scheduleTagGenerator("new")+'"</C:schedule-tag>\n'+
+        '<C:schedule-tag>"'+calDavProperties.scheduletag+'"</C:schedule-tag>\n'+
         '         <C:calendar-data>'+item+
         '         </C:calendar-data>\n'+
         '        </D:prop>\n'+
@@ -252,27 +252,95 @@ add_task(function(){
   dump("yieldedmodifyItem");
 });
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var newItem=null;
 function promise_org_ChangeEvent(){
+
 let deferred = Promise.defer(); 
 let oldItem = calItem;
-// oldItem.id 
- let newItem = calItem.clone();
+newItem = calItem.clone();
  //change etag
-// dump("modify:"+etagGenerator("modify"));
  calDavProperties.getetag++;
+ //change the schedule tag of organizer object
+ scheduleTagGenerator("orgdirectChange");
+ dump("new schedule-tag:"+calDavProperties.scheduletag);
  dump("newEtag:"+calDavProperties.getetag);
  newItem.title = "NewTitle";
  dump("xpcshell:"+calendar.name);
  dump("oldtem:"+oldItem.title+":ID:"+oldItem.id);
  dump("newItem:"+newItem.title+":ID:"+newItem.id);
  calendar.modifyItem(newItem,oldItem,{
-      onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
-        dump("onModifyComplete:");
-        deferred.resolve(aStatus);
+      onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
+       dump("\nItem successfully modified on calendar "+aCalendar.name);
+       do_execute_soon(function() {
+        //retrieve the item on behalf of the organizer, as organizer is in the principal user list
+                calendar.getItem(aitem.id, retrieveItem);
+                deferred.resolve(aStatus);
+             });
       }
     });
  return deferred.promise;
   }
+
+  let retrieveItem = {
+    onGetResult: function(c, s, t, d, c, items) {
+      dump("modifieditem:"+items[0].title);
+      let modifieditem = items[0];
+      let attendeesMod = modifieditem.getAttendees({});
+      let attendeesOrig = newItem.getAttendees({});
+       //check modified item properties
+       do_check_eq(modifieditem.id,newItem.id);
+       do_check_eq(modifieditem.title,newItem.title);
+       do_check_eq(attendeesMod[0].id,attendeesOrig[0].id);
+       do_check_eq(attendeesMod[0].isOrganizer,attendeesOrig[0].isOrganizer);
+       do_check_eq(attendeesMod[0].role, attendeesOrig[0].role);
+       do_check_eq(attendeesMod[1].id,attendeesOrig[1].id);
+       do_check_eq(attendeesMod[1].isOrganizer,attendeesOrig[1].isOrganizer);
+       do_check_eq(attendeesMod[1].role, attendeesOrig[1].role);
+    }
+  };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -286,11 +354,17 @@ function createResourceHandler(request,response) {
     item = body;
     let method = request.method;
     let matchheader = request.getHeader("If-None-Match");
+
+    // if(request.getHeader("If-Schedule-Tag-Match")!=null){
+    //   let matchScheduleTag = request.getHeader("If-Schedule-Tag-Match");
+    // }
+    
     dump(method+"||"+matchheader);
     dump("request body : "+body);
     //write the logic for creating resources
     if(method=="PUT" && matchheader=="*" && body){
       dump("GETFILE: 1\n");
+      //creating resources and adding changes.
       let fileOrg = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.org"]);
       let fileAtt1 = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.att1"]);
       let fileAtt2 = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.att2"]);
@@ -306,7 +380,11 @@ function createResourceHandler(request,response) {
         response.setStatusLine(request.httpVersion, 201, "resource created");
         response.write("");
         //after this, there will be a sequence of requests. create those handlers :|
-      } else{
+      }
+      // else if(method=="PUT" && request.getHeader("If-Schedule-Tag-Match")=="12345"){
+      //   dump("If-Schedule-Tag-Match:");
+      // }
+       else{
         response.setStatusLine(request.httpVersion, 400, "Bad Request");
       }
     } catch (e) {
@@ -376,7 +454,7 @@ function createResourceHandler(request,response) {
   }
 
   function principalHandler(request, response) {
-          dump("camehere6");
+    dump("camehere6");
     if (request.method == "PROPFIND") {
 dump("\ncamehere7");
 
@@ -392,23 +470,18 @@ dump("\ncamehere7");
 
  
   function scheduleTagGenerator(mode){
-    var newScheduleTag;
     switch(mode) {
-      case "new" : 
-      newScheduleTag = 488177;
-      currentScheduleTag = newScheduleTag;
-      dump("mode:new"+currentScheduleTag);
+      //org direct change
+      case "orgdirectChange" :
+      calDavProperties.scheduletag++;
+      dump("mode:orgChange"+calDavProperties.scheduletag);
       break;
-      case "orgChange" :
-      newScheduleTag = currentScheduleTag+1;
-      dump("mode:orgChange"+currentScheduleTag);
-      break;
-      case "attChange" :
+
+      case "attdirectChange" :
       newScheduleTag = currentScheduleTag;
       dump("mode:attChange"+currentScheduleTag);
       break;   
     }
-    return newScheduleTag; 
   }
   // function etagGenerator(mode){
   //   if(mode=="new") {

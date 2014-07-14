@@ -10,18 +10,18 @@
  Components.utils.import("resource://calendar/modules/calUtils.jsm");
  Components.utils.import("resource://gre/modules/FileUtils.jsm");
 
-Components.utils.import("resource:///modules/Services.jsm");
-Services.prefs.setBoolPref("javascript.options.showInConsole", true);
-Services.prefs.setBoolPref("browser.dom.window.dump.enabled", true);
-Services.prefs.setBoolPref("calendar.debug.log", true);
-Services.prefs.setBoolPref("calendar.debug.log.verbose", true);
+ Components.utils.import("resource:///modules/Services.jsm");
+ Services.prefs.setBoolPref("javascript.options.showInConsole", true);
+ Services.prefs.setBoolPref("browser.dom.window.dump.enabled", true);
+ Services.prefs.setBoolPref("calendar.debug.log", true);
+ Services.prefs.setBoolPref("calendar.debug.log.verbose", true);
 
-var currentScheduleTag;
-var currentEtag;
-const xmlHeader = '<?xml version="1.0" encoding="UTF-8"?>\n';
-var calItem;
-var calendar;
-var serverProperties = {
+ var currentScheduleTag;
+ var currentEtag;
+ const xmlHeader = '<?xml version="1.0" encoding="UTF-8"?>\n';
+ var calItem;
+ var calendar;
+ var serverProperties = {
   port : 50001,
   name : "xpcshellServer"
 };
@@ -35,19 +35,30 @@ var calDavProperties = {
   userPrincipalHref : "/users/xpcshell/",
 
   icalString :      'BEGIN:VEVENT\n' + 
-                    'DTSTART:20140725T230000\n' +
-                    'DTEND:20140726T000000\n' +
-                    'LOCATION:Paris\n'+
-                    'TRANSP:OPAQUE\n'+
-                    'ORGANIZER;CN=Organizer Name;SENT-BY="mailto:malinthak2@gmail.com":mailto:malinthak2@gmail.com\n'+
-                    'ATTENDEE;CN=Attendee1 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:mozilla@kewis.ch\n'+
-                    'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee@example.com\n'+
-                    'END:VEVENT\n',
+  'DTSTART:20140725T230000\n' +
+  'DTEND:20140726T000000\n' +
+  'LOCATION:Paris\n'+
+  'TRANSP:OPAQUE\n'+
+  'ORGANIZER;CN=Organizer Name;SENT-BY="mailto:malinthak2@gmail.com":mailto:malinthak2@gmail.com\n'+
+  'ATTENDEE;CN=Attendee1 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:mozilla@kewis.ch\n'+
+  'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee@example.com\n'+
+  'END:VEVENT\n',
   itemID : "1b05e158-631a-445f-8c5a-5743b5a05169",
   supportedComps : ["VEVENT","VTODO"],
   userAddressSet : ["mozilla@kewis.ch","uni@kewis.ch","kewisch@kewis.ch","/SOGo/dav/kewisch/","malinthak2@gmail.com"],
+  //schedule-tag and etag of organizer's object resource
   getetag : 2314233447,
   scheduletag : 12345
+};
+
+var attendee1 = {
+  getetag : 1114233447,
+  scheduletag : 23456
+};
+
+var attendee12 = {
+  getetag : 2224233447,
+  scheduletag : 34567
 };
 
 var resTemplate = {
@@ -109,79 +120,79 @@ var resTemplate = {
   reportPropfind : function reportPropfind(request){
 
     let responseQuery = xmlHeader+"\n"+ 
-        ' <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
-        '   <D:response>\n'+
-        '     <D:href>'+request.path+calDavProperties.itemID+'.ics</D:href>\n'+
-        '     <D:propstat>\n'+
-        '        <D:prop>\n'+
-        '         <D:getetag>"'+calDavProperties.getetag+'"</D:getetag>\n'+
-        '<C:schedule-tag>"'+calDavProperties.scheduletag+'"</C:schedule-tag>\n'+
-        '         <C:calendar-data>'+item+
-        '         </C:calendar-data>\n'+
-        '        </D:prop>\n'+
-        '        <D:status>HTTP/1.1 200 OK</D:status>\n'+
-        '        </D:propstat>\n'+
-        '   </D:response>\n'+
-        ' </D:multistatus>\n';
-  
+    ' <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
+    '   <D:response>\n'+
+    '     <D:href>'+request.path+calDavProperties.itemID+'.ics</D:href>\n'+
+    '     <D:propstat>\n'+
+    '        <D:prop>\n'+
+    '         <D:getetag>"'+calDavProperties.getetag+'"</D:getetag>\n'+
+    '<C:schedule-tag>"'+calDavProperties.scheduletag+'"</C:schedule-tag>\n'+
+    '         <C:calendar-data>'+item+
+    '         </C:calendar-data>\n'+
+    '        </D:prop>\n'+
+    '        <D:status>HTTP/1.1 200 OK</D:status>\n'+
+    '        </D:propstat>\n'+
+    '   </D:response>\n'+
+    ' </D:multistatus>\n';
+    
 
     return responseQuery;
-},
+  },
 
-principalProperty : function principalProperty(request){
+  principalProperty : function principalProperty(request){
     let responseQuery = '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
-      '  <D:response>\n' +
-      '    <D:href>/calendar/xpcshell/</D:href>\n' +
-      '    <D:propstat>\n' +
-      '      <D:status>HTTP/1.1 200 OK</D:status>\n' +
-      '      <D:prop>\n' +
-      '        <a:calendar-home-set>\n' +
-      '          <D:href xmlns:D="DAV:">/calendar/</D:href>\n' +
-      '        </a:calendar-home-set>\n' +
-      '        <a:schedule-inbox-URL>\n' +
-      '          <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
-      '        </a:schedule-inbox-URL>\n' +
-      '        <a:schedule-outbox-URL>\n' +
-      '          <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
-      '        </a:schedule-outbox-URL>\n' +
-      '        <a:calendar-user-address-set>\n';
+    '  <D:response>\n' +
+    '    <D:href>/calendar/xpcshell/</D:href>\n' +
+    '    <D:propstat>\n' +
+    '      <D:status>HTTP/1.1 200 OK</D:status>\n' +
+    '      <D:prop>\n' +
+    '        <a:calendar-home-set>\n' +
+    '          <D:href xmlns:D="DAV:">/calendar/</D:href>\n' +
+    '        </a:calendar-home-set>\n' +
+    '        <a:schedule-inbox-URL>\n' +
+    '          <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
+    '        </a:schedule-inbox-URL>\n' +
+    '        <a:schedule-outbox-URL>\n' +
+    '          <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
+    '        </a:schedule-outbox-URL>\n' +
+    '        <a:calendar-user-address-set>\n';
 
-      for (var i = 0; i < calDavProperties.userAddressSet.length; i++) {
-       responseQuery += '<D:href xmlns:D="DAV:">mailto:'+calDavProperties.userAddressSet[i]+'</D:href>\n';
-      }
-      responseQuery += '</a:calendar-user-address-set>\n' +
-      '      </D:prop>\n' +
-      '    </D:propstat>\n' +
-      '  </D:response>\n' +
-      '</D:multistatus>';
+    for (var i = 0; i < calDavProperties.userAddressSet.length; i++) {
+     responseQuery += '<D:href xmlns:D="DAV:">mailto:'+calDavProperties.userAddressSet[i]+'</D:href>\n';
+   }
+   responseQuery += '</a:calendar-user-address-set>\n' +
+   '      </D:prop>\n' +
+   '    </D:propstat>\n' +
+   '  </D:response>\n' +
+   '</D:multistatus>';
       //dump("responseQuery\n"+responseQuery);
       return responseQuery;
-  }
+    }
 
-};
+  };
 
 
-function registerFakeUMimTyp() {
-  try {
-    Services.dirsvc.get("UMimTyp", Components.interfaces.nsIFile);
-  } catch (e) {
-    Services.dirsvc.registerProvider({
-      getFile: function(prop, persist) {
-        if (prop == "UMimTyp") {
-          var mimeTypes = Services.dirsvc.get("ProfD", Ci.nsIFile);
-          mimeTypes.append("mimeTypes.rdf");
-          return mimeTypes;
+  function registerFakeUMimTyp() {
+    try {
+      Services.dirsvc.get("UMimTyp", Components.interfaces.nsIFile);
+    } catch (e) {
+      Services.dirsvc.registerProvider({
+        getFile: function(prop, persist) {
+          if (prop == "UMimTyp") {
+            var mimeTypes = Services.dirsvc.get("ProfD", Ci.nsIFile);
+            mimeTypes.append("mimeTypes.rdf");
+            return mimeTypes;
+          }
+          throw Components.results.NS_ERROR_FAILURE;
         }
-        throw Components.results.NS_ERROR_FAILURE;
-      }
-    });
+      });
+    }
   }
-}
 
 
-function run_test() {
-  do_get_profile();
-  registerFakeUMimTyp();
+  function run_test() {
+    do_get_profile();
+    registerFakeUMimTyp();
 
     //start server
     var server = new HttpServer(); 
@@ -270,9 +281,9 @@ add_task(function(){
 var newItem=null;
 function promise_org_ChangeEvent(){
 
-let deferred = Promise.defer(); 
-let oldItem = calItem;
-newItem = calItem.clone();
+  let deferred = Promise.defer(); 
+  let oldItem = calItem;
+  newItem = calItem.clone();
  //change etag
  calDavProperties.getetag++;
  //change the schedule tag of organizer object
@@ -284,24 +295,24 @@ newItem = calItem.clone();
  dump("oldtem:"+oldItem.title+":ID:"+oldItem.id);
  dump("newItem:"+newItem.title+":ID:"+newItem.id);
  calendar.modifyItem(newItem,oldItem,{
-      onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
-       dump("\nItem successfully modified on calendar "+aCalendar.name);
-       do_execute_soon(function() {
+  onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
+   dump("\nItem successfully modified on calendar "+aCalendar.name);
+   do_execute_soon(function() {
         //retrieve the item on behalf of the organizer, as organizer is in the principal user list
-                calendar.getItem(aitem.id, retrieveItem);
-                deferred.resolve(aStatus);
-             });
-      }
-    });
+        calendar.getItem(aitem.id, retrieveItem);
+        deferred.resolve(aStatus);
+      });
+ }
+});
  return deferred.promise;
-  }
+}
 
-  let retrieveItem = {
-    onGetResult: function(c, s, t, d, c, items) {
-      dump("modifieditem:"+items[0].title);
-      let modifieditem = items[0];
-      let attendeesMod = modifieditem.getAttendees({});
-      let attendeesOrig = newItem.getAttendees({});
+let retrieveItem = {
+  onGetResult: function(c, s, t, d, c, items) {
+    dump("modifieditem:"+items[0].title);
+    let modifieditem = items[0];
+    let attendeesMod = modifieditem.getAttendees({});
+    let attendeesOrig = newItem.getAttendees({});
        //check modified item properties
        do_check_eq(modifieditem.id,newItem.id);
        do_check_eq(modifieditem.title,newItem.title);
@@ -311,8 +322,8 @@ newItem = calItem.clone();
        do_check_eq(attendeesMod[1].id,attendeesOrig[1].id);
        do_check_eq(attendeesMod[1].isOrganizer,attendeesOrig[1].isOrganizer);
        do_check_eq(attendeesMod[1].role, attendeesOrig[1].role);
-    }
-  };
+     }
+   };
 
 
 
@@ -377,19 +388,29 @@ function createResourceHandler(request,response) {
       fileAtt1.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
       fileAtt2.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
 
+      writeToFile(fileOrg,body);
+      writeToFile(fileAtt1,body);
+      writeToFile(fileAtt2,body);
+      response.setStatusLine(request.httpVersion, 201, "resource created");
+      response.write("");
+    }
+
+    else if(method=="PUT" && matchheader == '"12345"'){
+      dump("got scheduletag:");
+        //update object resources. here organizer's and attendees resources should be changed and schedule-tags as well.
+        // since this is a change not only containing a partstat change
+        let fileOrg = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.org"]);
+        let fileAtt1 = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.att1"]);
+        let fileAtt2 = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.att2"]);
+
         writeToFile(fileOrg,body);
         writeToFile(fileAtt1,body);
         writeToFile(fileAtt2,body);
-        response.setStatusLine(request.httpVersion, 201, "resource created");
-        response.write("");
-      }
 
-      else if(method=="PUT" && matchheader == '"12345"'){
-        dump("got scheduletag:");
         response.setStatusLine(request.httpVersion, 200, "resource changed");
         response.write("");
       }
-       else{
+      else{
         response.setStatusLine(request.httpVersion, 400, "Bad Request");
       }
     } catch (e) {
@@ -410,27 +431,27 @@ function createResourceHandler(request,response) {
     dump("path:"+request.path+"method:"+request.method+"\n"+body);
 
     try {
-    if (request.method == "PROPFIND" && body.indexOf("current-user-prin") > -1) {
-      dump("camehere1");
+      if (request.method == "PROPFIND" && body.indexOf("current-user-prin") > -1) {
+        dump("camehere1");
         let resText = resTemplate.initPropfind(request);
         response.setStatusLine(request.httpVersion, 207, "Multi-Status");
         response.setHeader("content-type","text/xml");
         response.write(resText);
       } 
 
-    else if (request.method == "PROPFIND" && body.indexOf("getetag") > -1) {
-          dump("camehere3");
-         let resText = resTemplate.propPropfind(request);
-         response.setStatusLine(request.httpVersion, 207, "Multi-Status");
-         response.setHeader("content-type","text/xml");
-         response.write(resText);
-   } 
+      else if (request.method == "PROPFIND" && body.indexOf("getetag") > -1) {
+        dump("camehere3");
+        let resText = resTemplate.propPropfind(request);
+        response.setStatusLine(request.httpVersion, 207, "Multi-Status");
+        response.setHeader("content-type","text/xml");
+        response.write(resText);
+      } 
 
-   else if (request.method=="REPORT") {
+      else if (request.method=="REPORT") {
     //modified item request also comes here.
     dump("camehere4");
     let reportResText = resTemplate.reportPropfind(request);
-        dump("camehere5:changed etag"+reportResText);
+    dump("camehere5:changed etag"+reportResText);
         //calDavRequestHandlers #759
         response.setStatusLine(request.httpVersion, 207, "Multi-Status");
         response.setHeader("content-type","text/xml");
@@ -459,7 +480,7 @@ function createResourceHandler(request,response) {
   function principalHandler(request, response) {
     dump("camehere6");
     if (request.method == "PROPFIND") {
-dump("\ncamehere7");
+      dump("\ncamehere7");
 
       let principalResText = resTemplate.principalProperty(request);
       dump("princtest");
@@ -471,7 +492,7 @@ dump("\ncamehere7");
     }
   }
 
- 
+  
   function scheduleTagGenerator(mode){
     switch(mode) {
       //org direct change

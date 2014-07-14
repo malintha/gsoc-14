@@ -284,27 +284,21 @@ function promise_org_ChangeEvent(){
   let deferred = Promise.defer(); 
   let oldItem = calItem;
   newItem = calItem.clone();
- //change etag
- calDavProperties.getetag++;
- //change the schedule tag of organizer object
- scheduleTagGenerator("orgdirectChange");
- dump("new schedule-tag:"+calDavProperties.scheduletag);
- dump("newEtag:"+calDavProperties.getetag);
- newItem.title = "NewTitle";
- dump("xpcshell:"+calendar.name);
- dump("oldtem:"+oldItem.title+":ID:"+oldItem.id);
- dump("newItem:"+newItem.title+":ID:"+newItem.id);
- calendar.modifyItem(newItem,oldItem,{
-  onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
-   dump("\nItem successfully modified on calendar "+aCalendar.name);
-   do_execute_soon(function() {
+  newItem.title = "NewTitle";
+  dump("xpcshell:"+calendar.name);
+  dump("oldtem:"+oldItem.title+":ID:"+oldItem.id);
+  dump("newItem:"+newItem.title+":ID:"+newItem.id);
+  calendar.modifyItem(newItem,oldItem,{
+    onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
+     dump("\nItem successfully modified on calendar "+aCalendar.name);
+     do_execute_soon(function() {
         //retrieve the item on behalf of the organizer, as organizer is in the principal user list
         calendar.getItem(aitem.id, retrieveItem);
         deferred.resolve(aStatus);
       });
- }
-});
- return deferred.promise;
+   }
+ });
+  return deferred.promise;
 }
 
 let retrieveItem = {
@@ -407,6 +401,15 @@ function createResourceHandler(request,response) {
         writeToFile(fileAtt1,body);
         writeToFile(fileAtt2,body);
 
+        calDavProperties.getetag++;
+        //change the schedule tag of organizer object
+        calDavProperties.scheduletag++;
+        //now changing attendees schedule tags since resources are updated
+        attendee1.scheduletag++;
+        attendee2.scheduletag++;
+        
+        dump("new schedule-tag:"+calDavProperties.scheduletag);
+        dump("newEtag:"+calDavProperties.getetag);
         response.setStatusLine(request.httpVersion, 200, "resource changed");
         response.write("");
       }

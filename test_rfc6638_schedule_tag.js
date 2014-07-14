@@ -45,18 +45,20 @@ var calDavProperties = {
   'END:VEVENT\n',
   itemID : "1b05e158-631a-445f-8c5a-5743b5a05169",
   supportedComps : ["VEVENT","VTODO"],
-  userAddressSet : ["mozilla@kewis.ch","uni@kewis.ch","kewisch@kewis.ch","/SOGo/dav/kewisch/","malinthak2@gmail.com"],
+  //principal object resource is organizer's object resource
+  userAddressSet : ["malinthak2@gmail.com"],
   //schedule-tag and etag of organizer's object resource
   getetag : 2314233447,
   scheduletag : 12345
 };
 
+//schedule-tag and etag of attendees' object resource
 var attendee1 = {
   getetag : 1114233447,
   scheduletag : 23456
 };
 
-var attendee12 = {
+var attendee2 = {
   getetag : 2224233447,
   scheduletag : 34567
 };
@@ -171,7 +173,6 @@ var resTemplate = {
 
   };
 
-
   function registerFakeUMimTyp() {
     try {
       Services.dirsvc.get("UMimTyp", Components.interfaces.nsIFile);
@@ -188,7 +189,6 @@ var resTemplate = {
       });
     }
   }
-
 
   function run_test() {
     do_get_profile();
@@ -251,7 +251,6 @@ function test_CreateResource(){
   calendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
   calendar.name="testCalendar";
   calmgr.registerCalendar(calendar);
-  // xpc_calendar = calendar;
   yield waitForInit(calendar);
   yield promiseAddItem(calItem, calendar);
 
@@ -262,21 +261,6 @@ add_task(function(){
   yield promise_org_ChangeEvent();
   dump("yieldedmodifyItem");
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 var newItem=null;
 function promise_org_ChangeEvent(){
@@ -318,36 +302,6 @@ let retrieveItem = {
        do_check_eq(attendeesMod[1].role, attendeesOrig[1].role);
      }
    };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 //handler for incoming requests to http://localhost:50001/calendar/event.ics
 function createResourceHandler(request,response) {
@@ -407,7 +361,6 @@ function createResourceHandler(request,response) {
         //now changing attendees schedule tags since resources are updated
         attendee1.scheduletag++;
         attendee2.scheduletag++;
-        
         dump("new schedule-tag:"+calDavProperties.scheduletag);
         dump("newEtag:"+calDavProperties.getetag);
         response.setStatusLine(request.httpVersion, 200, "resource changed");
@@ -495,22 +448,6 @@ function createResourceHandler(request,response) {
     }
   }
 
-  
-  function scheduleTagGenerator(mode){
-    switch(mode) {
-      //org direct change
-      case "orgdirectChange" :
-      calDavProperties.scheduletag++;
-      dump("mode:orgChange"+calDavProperties.scheduletag);
-      break;
-
-      case "attdirectChange" :
-      newScheduleTag = currentScheduleTag;
-      dump("mode:attChange"+currentScheduleTag);
-      break;   
-    }
-  }
-
   function writeToFile(file,data){
     let ostream = FileUtils.openSafeFileOutputStream(file);
     let converter = Components.classes["@mozilla.org/intl/scriptableunicodeconverter"].
@@ -521,23 +458,6 @@ function createResourceHandler(request,response) {
       if (!Components.isSuccessCode(status)) {
         return;
       }
-      // Data has been written to the file.
     });
   }
 
-
-//this is not working
-/*
-function readFile(file, callback)
-{
-  dump("came"+file.path+file.exists());
-let channel = NetUtil.newChannel(file);
- 
- NetUtil.asyncFetch(channel, function(ainputStream, astatus) {
-   ok(Components.isSuccessCode(astatus),"file was read successfully");
-   let content = NetUtil.readInputStreamToString(ainputStream,
-     ainputStream.available());
-   callback(content);
- });
-}
-*/

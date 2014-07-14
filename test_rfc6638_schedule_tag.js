@@ -353,12 +353,17 @@ function createResourceHandler(request,response) {
     let body = NetUtil.readInputStreamToString(is, is.available(),  { charset: "UTF-8" });
     item = body;
     let method = request.method;
-    let matchheader = request.getHeader("If-None-Match");
+    let matchheader="";
 
-    // if(request.getHeader("If-Schedule-Tag-Match")!=null){
-    //   let matchScheduleTag = request.getHeader("If-Schedule-Tag-Match");
-    // }
-    
+    if(request.hasHeader("If-None-Match")){
+      matchheader = request.getHeader("If-None-Match");
+    }
+
+    else if(request.hasHeader("If-Schedule-Tag-Match")){
+      dump("gotchca:");
+      matchheader = request.getHeader("If-Schedule-Tag-Match");
+    }
+
     dump(method+"||"+matchheader);
     dump("request body : "+body);
     //write the logic for creating resources
@@ -371,24 +376,24 @@ function createResourceHandler(request,response) {
       fileOrg.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
       fileAtt1.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
       fileAtt2.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
-        //this creates the file at /tmp/
-        //dump("file_created at : "+file.path+" content:"+body);
-        //deleting after the test should also implement. no method found
+
         writeToFile(fileOrg,body);
         writeToFile(fileAtt1,body);
         writeToFile(fileAtt2,body);
         response.setStatusLine(request.httpVersion, 201, "resource created");
         response.write("");
-        //after this, there will be a sequence of requests. create those handlers :|
       }
-      // else if(method=="PUT" && request.getHeader("If-Schedule-Tag-Match")=="12345"){
-      //   dump("If-Schedule-Tag-Match:");
-      // }
+
+      else if(method=="PUT" && matchheader == '"12345"'){
+        dump("got scheduletag:");
+        response.setStatusLine(request.httpVersion, 200, "resource changed");
+        response.write("");
+      }
        else{
         response.setStatusLine(request.httpVersion, 400, "Bad Request");
       }
     } catch (e) {
-      dump("\n\n#### EEE: in createResourceHandler" + e + e.fileName + e.lineNumber +"\n");
+      dump("\n\n#### EEE:" + e + e.fileName + e.lineNumber +"\n");
     }
   }
 
@@ -403,10 +408,8 @@ function createResourceHandler(request,response) {
     }
 
     dump("path:"+request.path+"method:"+request.method+"\n"+body);
-    try {
 
-    //problem at calDavRequestHandlers #984 this.calendar.addTargetCalendarItem
-    //caldav #1116 this.mOfflineStorage.adoptItem(item, aListener);
+    try {
     if (request.method == "PROPFIND" && body.indexOf("current-user-prin") > -1) {
       dump("camehere1");
         let resText = resTemplate.initPropfind(request);
@@ -483,19 +486,6 @@ dump("\ncamehere7");
       break;   
     }
   }
-  // function etagGenerator(mode){
-  //   if(mode=="new") {
-  //     currentEtag = calDavProperties.getetag;
-  //     return currentEtag;
-  //   }
-  //   if(mode=="modify"){
-  //     currentEtag++;
-  //     dump("new Etag:"+cu);
-  //     return currentEtag;
-  //   } else {
-  //     return currentEtag;
-  //   }
-  // }
 
   function writeToFile(file,data){
     let ostream = FileUtils.openSafeFileOutputStream(file);

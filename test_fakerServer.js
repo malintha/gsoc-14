@@ -16,11 +16,12 @@ Services.prefs.setBoolPref("browser.dom.window.dump.enabled", true);
 Services.prefs.setBoolPref("calendar.debug.log", true);
 Services.prefs.setBoolPref("calendar.debug.log.verbose", true);
 
+var item; //using this temporary
 var currentScheduleTag;
 var currentEtag;
 const xmlHeader = '<?xml version="1.0" encoding="UTF-8"?>\n';
-var calItem;
-var calendar;
+var item;
+
 var serverProperties = {
   port : 50001,
   name : "xpcshellServer"
@@ -34,20 +35,18 @@ var calDavProperties = {
   scheduleOutboxURL : "/calendar/xpcshell",
   userPrincipalHref : "/users/xpcshell/",
 
-  icalString :      'BEGIN:VEVENT\n' + 
-                    'DTSTART:20140725T230000\n' +
-                    'DTEND:20140726T000000\n' +
-                    'LOCATION:Paris\n'+
-                    'TRANSP:OPAQUE\n'+
-                    'ORGANIZER;CN=Organizer Name;SENT-BY="mailto:malinthak2@gmail.com":mailto:malinthak2@gmail.com\n'+
-                    'ATTENDEE;CN=Attendee1 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:mozilla@kewis.ch\n'+
-                    'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee@example.com\n'+
-                    'END:VEVENT\n',
+  icalString :      "BEGIN:VEVENT\n" + 
+                    "DTSTART:20140725T230000\n" +
+                    "DTEND:20140726T000000\n" +
+                    "LOCATION:Paris\n"+
+                    "TRANSP:OPAQUE\n"+
+                    "END:VEVENT",
+
   itemID : "1b05e158-631a-445f-8c5a-5743b5a05169",
   supportedComps : ["VEVENT","VTODO"],
-  userAddressSet : ["mozilla@kewis.ch","uni@kewis.ch","kewisch@kewis.ch","/SOGo/dav/kewisch/","malinthak2@gmail.com"],
+  userAddressSet : ["mozilla@kewis.ch","uni@kewis.ch","kewisch@kewis.ch","/SOGo/dav/kewisch/"],
   getetag : 2314233447,
-  scheduletag : 12345
+  scheduletag : ""
 };
 
 var resTemplate = {
@@ -96,7 +95,7 @@ var resTemplate = {
     '         <D:propstat>\n'+
     '           <D:prop>\n'+
     '             <D:getetag>"'+calDavProperties.getetag+'"</D:getetag>\n'+
-    '             <C:schedule-tag>"'+calDavProperties.scheduletag+'"</C:schedule-tag>\n'+
+ // '             <C:schedule-tag>"'+scheduleTagGenerator("new")+'"</C:schedule-tag>\n'+
     '             <C:calendar-data>'+item+'</C:calendar-data>\n'+
     '           </D:prop>\n'+
     '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
@@ -115,7 +114,7 @@ var resTemplate = {
         '     <D:propstat>\n'+
         '        <D:prop>\n'+
         '         <D:getetag>"'+calDavProperties.getetag+'"</D:getetag>\n'+
-        '<C:schedule-tag>"'+calDavProperties.scheduletag+'"</C:schedule-tag>\n'+
+      // '<C:schedule-tag>"'+scheduleTagGenerator("new")+'"</C:schedule-tag>\n'+
         '         <C:calendar-data>'+item+
         '         </C:calendar-data>\n'+
         '        </D:prop>\n'+
@@ -128,8 +127,9 @@ var resTemplate = {
     return responseQuery;
 },
 
-principalProperty : function principalProperty(request){
-    let responseQuery = '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
+principalSearch : function principalSearch(request){
+    let responseQuery = xmlHeader +
+      '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
       '  <D:response>\n' +
       '    <D:href>/calendar/xpcshell/</D:href>\n' +
       '    <D:propstat>\n' +
@@ -144,26 +144,16 @@ principalProperty : function principalProperty(request){
       '        <a:schedule-outbox-URL>\n' +
       '          <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
       '        </a:schedule-outbox-URL>\n' +
-<<<<<<< HEAD
-      '        <a:calendar-user-address-set>\n';
-
+'        <a:calendar-user-address-set>\n';
       for (var i = 0; i < calDavProperties.userAddressSet.length; i++) {
        responseQuery += '<D:href xmlns:D="DAV:">mailto:'+calDavProperties.userAddressSet[i]+'</D:href>\n';
       }
       responseQuery += '</a:calendar-user-address-set>\n' +
-=======
-      '        <a:calendar-user-address-set>\n' +
-      '          <D:href xmlns:D="DAV:">mailto:mozilla@kewis.ch</D:href>\n' +
-      '          <D:href xmlns:D="DAV:">mailto:uni@kewis.ch</D:href>\n' +
-      '          <D:href xmlns:D="DAV:">mailto:kewisch@kewis.ch</D:href>\n' +
-      '          <D:href xmlns:D="DAV:">/SOGo/dav/kewisch/</D:href>\n' +
-      '        </a:calendar-user-address-set>\n' +
->>>>>>> parent of c39ce73... fake server
       '      </D:prop>\n' +
       '    </D:propstat>\n' +
       '  </D:response>\n' +
       '</D:multistatus>';
-      //dump("responseQuery\n"+responseQuery);
+      dump("responseQuery\n"+responseQuery);
       return responseQuery;
   }
 
@@ -233,126 +223,31 @@ function run_test() {
     return deferred.promise;
   }
 
-
 //method to create the item with calendar.addItem which is pointed to localhost
 add_task(test_CreateResource);
 
 function test_CreateResource(){
   //get the string from caldavProperties
-  let icalString = calDavProperties.icalString;
+  let icalString = "BEGIN:VEVENT\n" + 
+  "DTSTART:20140725T230000\n" +
+  "DTEND:20140726T000000\n" +
+  "LOCATION:Paris\n"+
+  "TRANSP:OPAQUE\n"+
+  "END:VEVENT";
 
-  calItem = createEventFromIcalString(icalString);
-  calItem.id = "1b05e158-631a-445f-8c5a-5743b5a05169";
+  var item = createEventFromIcalString(icalString);
+  item.id = "1b05e158-631a-445f-8c5a-5743b5a05169";
   let calmgr = cal.getCalendarManager();
   let calendarURL = calDavProperties.basePath+calDavProperties.scheduleInboxURL;
   dump(calendarURL);
-  calendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
+  let calendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
   calendar.name="testCalendar";
   calmgr.registerCalendar(calendar);
-  // xpc_calendar = calendar;
+
   yield waitForInit(calendar);
-  yield promiseAddItem(calItem, calendar);
+  yield promiseAddItem(item, calendar);
 
 }
-
-//organizer changes the event
-add_task(function(){
-  yield promise_org_ChangeEvent();
-  dump("yieldedmodifyItem");
-});
-
-var newItem=null;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-function promise_org_ChangeEvent(){
-
-let deferred = Promise.defer(); 
-let oldItem = calItem;
-newItem = calItem.clone();
- //change etag
- calDavProperties.getetag++;
- //change the schedule tag of organizer object
- scheduleTagGenerator("orgdirectChange");
- dump("new schedule-tag:"+calDavProperties.scheduletag);
- dump("newEtag:"+calDavProperties.getetag);
- newItem.title = "NewTitle";
- dump("xpcshell:"+calendar.name);
- dump("oldtem:"+oldItem.title+":ID:"+oldItem.id);
- dump("newItem:"+newItem.title+":ID:"+newItem.id);
- calendar.modifyItem(newItem,oldItem,{
-      onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
-       dump("\nItem successfully modified on calendar "+aCalendar.name);
-       do_execute_soon(function() {
-                calendar.getItem(aitem.id, retrieveItem);
-                deferred.resolve(aStatus);
-             });
-      }
-    });
- return deferred.promise;
-  }
-
-  let retrieveItem = {
-    onGetResult: function(c, s, t, d, c, items) {
-      dump("modifieditem:"+items[0].title);
-      let modifieditem = items[0];
-      let attendeesMod = modifieditem.getAttendees({});
-      let attendeesOrig = newItem.getAttendees({});
-       //check modified item properties
-       do_check_eq(modifieditem.title,newItem.title);
-       do_check_eq(attendeesMod[0].id,attendeesOrig[0].id);
-       do_check_eq(attendeesMod[1].id,attendeesOrig[1].id);
-    }
-  };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 //handler for incoming requests to http://localhost:50001/calendar/event.ics
 function createResourceHandler(request,response) {
@@ -369,18 +264,12 @@ function createResourceHandler(request,response) {
     //write the logic for creating resources
     if(method=="PUT" && matchheader=="*" && body){
       dump("GETFILE: 1\n");
-      let fileOrg = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.org"]);
-      let fileAtt1 = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.att1"]);
-      let fileAtt2 = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.att2"]);
-      fileOrg.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
-      fileAtt1.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
-      fileAtt2.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
+      let file = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.tmp"]);
+      file.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
         //this creates the file at /tmp/
-        //dump("file_created at : "+file.path+" content:"+body);
+        dump("file_created at : "+file.path);
         //deleting after the test should also implement. no method found
-        writeToFile(fileOrg,body);
-        writeToFile(fileAtt1,body);
-        writeToFile(fileAtt2,body);
+        writeToFile(file,body);
         response.setStatusLine(request.httpVersion, 201, "resource created");
         response.write("");
         //after this, there will be a sequence of requests. create those handlers :|
@@ -388,7 +277,7 @@ function createResourceHandler(request,response) {
         response.setStatusLine(request.httpVersion, 400, "Bad Request");
       }
     } catch (e) {
-      dump("\n\n#### EEE: in createResourceHandler" + e + e.fileName + e.lineNumber +"\n");
+      dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
     }
   }
 
@@ -424,10 +313,9 @@ function createResourceHandler(request,response) {
    } 
 
    else if (request.method=="REPORT") {
-    //modified item request also comes here.
     dump("camehere4");
     let reportResText = resTemplate.reportPropfind(request);
-        dump("camehere5:changed etag"+reportResText);
+        dump("camehere5"+reportResText);
         //calDavRequestHandlers #759
         response.setStatusLine(request.httpVersion, 207, "Multi-Status");
         response.setHeader("content-type","text/xml");
@@ -454,16 +342,10 @@ function createResourceHandler(request,response) {
   }
 
   function principalHandler(request, response) {
-    dump("camehere6");
+          dump("came here6");
     if (request.method == "PROPFIND") {
-dump("\ncamehere7");
 
-<<<<<<< HEAD
-      let principalResText = resTemplate.principalProperty(request);
-      dump("princtest");
-=======
-      let principalResText = calDavProperties.principalSearch(request);
->>>>>>> parent of c39ce73... fake server
+      let principalResText = resTemplate.principalSearch(request);
       response.setStatusLine(request.httpVersion, 207, "Multi-Status");
       response.write(principalResText);
     } else {
@@ -471,35 +353,6 @@ dump("\ncamehere7");
       response.setStatusLine(request.httpVersion, 400, "Bad Request");
     }
   }
-
- 
-  function scheduleTagGenerator(mode){
-    switch(mode) {
-      //org direct change
-      case "orgdirectChange" :
-      calDavProperties.scheduletag++;
-      dump("mode:orgChange"+calDavProperties.scheduletag);
-      break;
-
-      case "attdirectChange" :
-      newScheduleTag = currentScheduleTag;
-      dump("mode:attChange"+currentScheduleTag);
-      break;   
-    }
-  }
-  // function etagGenerator(mode){
-  //   if(mode=="new") {
-  //     currentEtag = calDavProperties.getetag;
-  //     return currentEtag;
-  //   }
-  //   if(mode=="modify"){
-  //     currentEtag++;
-  //     dump("new Etag:"+cu);
-  //     return currentEtag;
-  //   } else {
-  //     return currentEtag;
-  //   }
-  // }
 
   function writeToFile(file,data){
     let ostream = FileUtils.openSafeFileOutputStream(file);
@@ -515,19 +368,3 @@ dump("\ncamehere7");
     });
   }
 
-
-//this is not working
-/*
-function readFile(file, callback)
-{
-  dump("came"+file.path+file.exists());
-let channel = NetUtil.newChannel(file);
- 
- NetUtil.asyncFetch(channel, function(ainputStream, astatus) {
-   ok(Components.isSuccessCode(astatus),"file was read successfully");
-   let content = NetUtil.readInputStreamToString(ainputStream,
-     ainputStream.available());
-   callback(content);
- });
-}
-*/

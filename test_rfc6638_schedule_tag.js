@@ -21,6 +21,7 @@
  const xmlHeader = '<?xml version="1.0" encoding="UTF-8"?>\n';
  var calItem;
  var calendar;
+ var responseCounter = 0;
  var serverProperties = {
   port : 50001,
   name : "xpcshellServer"
@@ -54,6 +55,15 @@ var calDavProperties = {
 
 //schedule-tag and etag of attendees' object resource
 var attendee1 = {
+  getctag : 1434568,
+  basePath : "http://localhost:"+serverProperties.port,
+  calendarHomeSetset : "/calendar/",
+  scheduleInboxURL : "/calendar/attendee1",
+  scheduleOutboxURL : "/calendar/attendee1",
+  userPrincipalHref : "/users/attendee1/",
+  itemID : "111111-631a-445f-8c5a-5743b5a05169",
+  supportedComps : ["VEVENT","VTODO"],
+  userAddressSet : ["mozilla@kewis.ch"],
   getetag : 1114233447,
   scheduletag : 23456
 };
@@ -67,6 +77,16 @@ var resTemplate = {
 
   initPropfind : function initPropfind(request){
 
+    let targetUser;
+    if(request.path=="/calendar/xpcshell/"){
+      targetUser = calDavProperties;
+      dump("\ncalenarOrg:");
+    }
+    else{
+      targetUser = attendee1;
+      dump("\nattendeeCal:");
+    }
+
     let responseQuery =  '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:b="http://calendarserver.org/ns/" xmlns:D="DAV:">\n' +
     '   <D:response>\n' +
     '    <D:href>' + request.path + '</D:href>\n' +
@@ -78,18 +98,18 @@ var resTemplate = {
     '           <calendar xmlns="urn:ietf:params:xml:ns:caldav"/>\n' +
     '         </D:resourcetype>\n' +
     '         <D:owner xmlns:D="DAV:">\n' +
-    '           <D:href>'+calDavProperties.userPrincipalHref+'</D:href>\n' +
+    '           <D:href>'+targetUser.userPrincipalHref+'</D:href>\n' +
     '         </D:owner>\n' +
     '         <D:current-user-principal xmlns:D="DAV:">\n' +
-    '           <D:href>'+calDavProperties.userPrincipalHref+'</D:href>\n' +
+    '           <D:href>'+targetUser.userPrincipalHref+'</D:href>\n' +
     '         </D:current-user-principal>\n' +
     '         <n1:supported-calendar-component-set xmlns:n1="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n';
 
-    for(let i=0; i<calDavProperties.supportedComps.length;i++){
-      responseQuery += '<n1:comp name="'+calDavProperties.supportedComps[i]+'"/>\n';
+    for(let i=0; i<targetUser.supportedComps.length;i++){
+      responseQuery += '<n1:comp name="'+targetUser.supportedComps[i]+'"/>\n';
     }
     responseQuery += '</n1:supported-calendar-component-set>\n' +
-    '         <b:getctag>'+calDavProperties.getctag+'</b:getctag>\n' +
+    '         <b:getctag>'+targetUser.getctag+'</b:getctag>\n' +
     '       </D:prop>\n' +
     '     </D:propstat>\n' +
     '   </D:response>\n' +
@@ -196,9 +216,15 @@ var resTemplate = {
 
     //start server
     var server = new HttpServer(); 
+    //atendee handlers registration
+    server.registerPathHandler("/calendar/attendee1/", initPropfindHandler);
+    server.registerPathHandler("/calendar/attendee1/111111-631a-445f-8c5a-5743b5a05169.ics", createResourceHandler);
+    server.registerPathHandler("/calendar/", calendarHandler);
+    server.registerPathHandler("/users/attendee1/", principalHandler);
+
+    server.registerPathHandler("/calendar/xpcshell/", initPropfindHandler);
     server.registerPathHandler("/calendar/xpcshell/1b05e158-631a-445f-8c5a-5743b5a05169.ics", createResourceHandler);
     server.registerPathHandler("/calendar/", calendarHandler);
-    server.registerPathHandler("/calendar/xpcshell/", initPropfindHandler);
     server.registerPathHandler("/users/xpcshell/",principalHandler);
     server.start(serverProperties.port);
 
@@ -246,21 +272,32 @@ function test_CreateResource(){
   calItem = createEventFromIcalString(icalString);
   calItem.id = "1b05e158-631a-445f-8c5a-5743b5a05169";
   let calmgr = cal.getCalendarManager();
+
+  //initialization of organizer calendar
   let calendarURL = calDavProperties.basePath+calDavProperties.scheduleInboxURL;
-  dump(calendarURL);
+  dump("calendarURL:"+calendarURL);
   calendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
   calendar.name="testCalendar";
   calmgr.registerCalendar(calendar);
   yield waitForInit(calendar);
+  dump("yielded:calendar\n");
+  //initialization of tendee calendar
+  let attendeeCalURL = attendee1.basePath+attendee1.scheduleInboxURL;
+  dump("attendeeCalURL:"+attendeeCalURL);
+  attenCalendar = calmgr.createCalendar("caldav", Services.io.newURI(attendeeCalURL, null, null));
+  attenCalendar.name = "attendeeCalendar";
+  calmgr.registerCalendar(attenCalendar);
+  yield waitForInit(attenCalendar);
+  dump("yielded:attendeeCalendar");
   yield promiseAddItem(calItem, calendar);
 
 }
 
 //organizer changes the event
-add_task(function(){
-  yield promise_org_ChangeEvent();
-  dump("yieldedmodifyItem");
-});
+// add_task(function(){
+//   yield promise_org_ChangeEvent();
+//   dump("yieldedmodifyItem");
+// });
 
 var newItem=null;
 function promise_org_ChangeEvent(){

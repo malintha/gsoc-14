@@ -331,20 +331,23 @@ function test_CreateResource(){
   dump("yielded:attendeeCalendar");
   //organizer creates the event in his calendar
   yield promiseAddItem(calItem, calendar);
-
+  dump("yielded:OrgpromiseAddItem");
   //server processes the event and automatically adds the item in attendee1's inbox
   attendItem = calItem.clone();
   attendItem.id = attendee1.itemID;
   yield promiseAddItem(attendItem,attenCalendar);
-
+  dump("yielded:AttpromiseAddItem");
 
 }
 
-//organizer changes the event
-// add_task(function(){
-//   yield promise_org_ChangeEvent();
-//   dump("yieldedmodifyItem");
-// });
+//now t is in the organizers calendar and attendee1's calendars. Organizer does a change to the event now.
+//Since the change is not a partstat change, schedule tags should be changed and the change should be merged with
+//attendee1's calendar.
+
+add_task(function(){
+  yield promise_org_ChangeEvent();
+  dump("yieldedmodifyItem");
+});
 
 var newItem=null;
 function promise_org_ChangeEvent(){
@@ -360,7 +363,8 @@ function promise_org_ChangeEvent(){
     onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
      dump("\nItem successfully modified on calendar "+aCalendar.name);
      do_execute_soon(function() {
-        //retrieve the item on behalf of the organizer, as organizer is in the principal user list
+        //retrieve the item on behalf of the organizer, as organizer is in the principal user list.
+        //considering the schedule-tag
         calendar.getItem(aitem.id, retrieveItem);
         deferred.resolve(aStatus);
       });
@@ -386,6 +390,10 @@ let retrieveItem = {
        do_check_eq(attendeesMod[1].role, attendeesOrig[1].role);
      }
    };
+
+//now event should retrieve from attendee1's calendar and assert it against changed event of organizer's
+
+
 
 //handler for incoming requests to http://localhost:50001/calendar/event.ics
 function createResourceHandler(request,response) {
@@ -414,7 +422,7 @@ function createResourceHandler(request,response) {
       dump("GETFILE: 1\n");
       //creating resources and adding changes.
       let fileOrg = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.org"]);
-      let fileAtt1 = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.att1"]);
+      let fileAtt1 = FileUtils.getFile("TmpD", ["111111-631a-445f-8c5a-5743b5a05169.ics.att1"]);
       let fileAtt2 = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.att2"]);
       fileOrg.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
       fileAtt1.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
@@ -432,7 +440,7 @@ function createResourceHandler(request,response) {
         //update object resources. here organizer's and attendees resources should be changed and schedule-tags as well.
         // since this is a change not only containing a partstat change
         let fileOrg = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.org"]);
-        let fileAtt1 = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.att1"]);
+        let fileAtt1 = FileUtils.getFile("TmpD", ["111111-631a-445f-8c5a-5743b5a05169.ics.att1"]);
         let fileAtt2 = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.att2"]);
 
         writeToFile(fileOrg,body);

@@ -20,6 +20,7 @@
  var currentEtag;
  const xmlHeader = '<?xml version="1.0" encoding="UTF-8"?>\n';
  var calItem;
+ var attendItem;
  var calendar;
  var responseCounter = 0;
  var serverProperties = {
@@ -118,6 +119,20 @@ var resTemplate = {
   },
 
   propPropfind : function propPropfind(request){
+    dump("\npropPropfind\n");
+    let tempItem;
+    let targetUser;
+    if(request.path=="/calendar/xpcshell/"){
+      targetUser = calDavProperties;
+      tempItem = item;
+      dump("\ncalenarOrgReport:");
+    }
+    else{
+      targetUser = attendee1;
+      tempItem = item;
+      tempItem.id = attendee1.itemID;
+      dump("\nattendeeCalReport:");
+    }
 
     item = createEventFromIcalString(calDavProperties.icalString);
     item.id = calDavProperties.itemID;
@@ -125,12 +140,12 @@ var resTemplate = {
     let responseQuery = xmlHeader+"\n"+ 
     '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
     '     <D:response>\n'+
-    '       <D:href>'+request.path+calDavProperties.itemID+'.ics</D:href>\n'+
+    '       <D:href>'+request.path+targetUser.itemID+'.ics</D:href>\n'+
     '         <D:propstat>\n'+
     '           <D:prop>\n'+
-    '             <D:getetag>"'+calDavProperties.getetag+'"</D:getetag>\n'+
-    '             <C:schedule-tag>"'+calDavProperties.scheduletag+'"</C:schedule-tag>\n'+
-    '             <C:calendar-data>'+item+'</C:calendar-data>\n'+
+    '             <D:getetag>"'+targetUser.getetag+'"</D:getetag>\n'+
+    '             <C:schedule-tag>"'+targetUser.scheduletag+'"</C:schedule-tag>\n'+
+    '             <C:calendar-data>'+tempItem+'</C:calendar-data>\n'+
     '           </D:prop>\n'+
     '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
     '         </D:propstat>\n'+
@@ -140,16 +155,30 @@ var resTemplate = {
   },
 
   reportPropfind : function reportPropfind(request){
+    dump("\nreportPropfind\n");
+    let tempItem;
+    let targetUser;
+    if(request.path=="/calendar/xpcshell/"){
+      targetUser = calDavProperties;
+      tempItem = item;
+      dump("\ncalenarOrgReport:");
+    }
+    else{
+      targetUser = attendee1;
+      tempItem = item;
+      tempItem.id = attendee1.itemID;
+      dump("\nattendeeCalReport:");
+    }
 
     let responseQuery = xmlHeader+"\n"+ 
     ' <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
     '   <D:response>\n'+
-    '     <D:href>'+request.path+calDavProperties.itemID+'.ics</D:href>\n'+
+    '     <D:href>'+request.path+targetUser.itemID+'.ics</D:href>\n'+
     '     <D:propstat>\n'+
     '        <D:prop>\n'+
-    '         <D:getetag>"'+calDavProperties.getetag+'"</D:getetag>\n'+
-    '<C:schedule-tag>"'+calDavProperties.scheduletag+'"</C:schedule-tag>\n'+
-    '         <C:calendar-data>'+item+
+    '         <D:getetag>"'+targetUser.getetag+'"</D:getetag>\n'+
+    '         <C:schedule-tag>"'+targetUser.scheduletag+'"</C:schedule-tag>\n'+
+    '         <C:calendar-data>'+tempItem+
     '         </C:calendar-data>\n'+
     '        </D:prop>\n'+
     '        <D:status>HTTP/1.1 200 OK</D:status>\n'+
@@ -157,11 +186,22 @@ var resTemplate = {
     '   </D:response>\n'+
     ' </D:multistatus>\n';
     
-
     return responseQuery;
   },
 
   principalProperty : function principalProperty(request){
+     dump("\nprincipalProperty:"+request.path+"\n");
+    let targetUser;
+    if(request.path=="/users/xpcshell/"){
+      targetUser = calDavProperties;
+      dump("\ncalenarOrgPrincipal:");
+    }
+    else{
+      targetUser = attendee1;
+      dump("\nattendeeCalPrincipal:");
+    }
+
+
     let responseQuery = '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
     '  <D:response>\n' +
     '    <D:href>/calendar/xpcshell/</D:href>\n' +
@@ -169,18 +209,18 @@ var resTemplate = {
     '      <D:status>HTTP/1.1 200 OK</D:status>\n' +
     '      <D:prop>\n' +
     '        <a:calendar-home-set>\n' +
-    '          <D:href xmlns:D="DAV:">/calendar/</D:href>\n' +
+    '          <D:href xmlns:D="DAV:">'+targetUser.calendarHomeSetset+'</D:href>\n' +
     '        </a:calendar-home-set>\n' +
     '        <a:schedule-inbox-URL>\n' +
-    '          <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
+    '          <D:href xmlns:D="DAV:">'+targetUser.scheduleInboxURL+'</D:href>\n' +
     '        </a:schedule-inbox-URL>\n' +
     '        <a:schedule-outbox-URL>\n' +
-    '          <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
+    '          <D:href xmlns:D="DAV:">'+targetUser.scheduleOutboxURL+'</D:href>\n' +
     '        </a:schedule-outbox-URL>\n' +
     '        <a:calendar-user-address-set>\n';
 
-    for (var i = 0; i < calDavProperties.userAddressSet.length; i++) {
-     responseQuery += '<D:href xmlns:D="DAV:">mailto:'+calDavProperties.userAddressSet[i]+'</D:href>\n';
+    for (var i = 0; i < targetUser.userAddressSet.length; i++) {
+     responseQuery += '<D:href xmlns:D="DAV:">mailto:'+targetUser.userAddressSet[i]+'</D:href>\n';
    }
    responseQuery += '</a:calendar-user-address-set>\n' +
    '      </D:prop>\n' +
@@ -270,7 +310,7 @@ function test_CreateResource(){
   let icalString = calDavProperties.icalString;
 
   calItem = createEventFromIcalString(icalString);
-  calItem.id = "1b05e158-631a-445f-8c5a-5743b5a05169";
+  calItem.id = calDavProperties.itemID;
   let calmgr = cal.getCalendarManager();
 
   //initialization of organizer calendar
@@ -289,7 +329,14 @@ function test_CreateResource(){
   calmgr.registerCalendar(attenCalendar);
   yield waitForInit(attenCalendar);
   dump("yielded:attendeeCalendar");
+  //organizer creates the event in his calendar
   yield promiseAddItem(calItem, calendar);
+
+  //server processes the event and automatically adds the item in attendee1's inbox
+  attendItem = calItem.clone();
+  attendItem.id = attendee1.itemID;
+  yield promiseAddItem(attendItem,attenCalendar);
+
 
 }
 

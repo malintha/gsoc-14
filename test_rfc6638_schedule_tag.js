@@ -141,6 +141,11 @@ var resTemplate = {
       dump("\nattendeeCalReport:");
     }
 
+    if(responseCounter>2){
+      tempItem.title="NewTitle";
+      dump("titleupdated:"+ tempItem.title)
+    }
+
     item = createEventFromIcalString(calDavProperties.icalString);
     item.id = calDavProperties.itemID;
 
@@ -175,6 +180,10 @@ var resTemplate = {
       tempItem = item;
       tempItem.id = attendee1.itemID;
       dump("\nattendeeCalReport:");
+    }
+
+    if(responseCounter>2){
+      tempItem.title="NewTitle";
     }
 
     let responseQuery = xmlHeader+"\n"+ 
@@ -284,13 +293,17 @@ var resTemplate = {
   function waitForInit(calendar) {
     let deferred = Promise.defer();
     let caldavCheckSeverInfo = calendar.wrappedJSObject.completeCheckServerInfo;
+    dump("caldavCheckSeverInfo1");
     let wrapper = function(listener, error) {
       if (Components.isSuccessCode(error)) {
+        dump("caldavCheckSeverInfo2");
         deferred.resolve();
       } else {
+        dump("caldavCheckSeverInfo3");
         deferred.reject();
       }   
-      calendar.wrappedJSObject.completeCheckServerInfo = caldavCheckServerInfo;
+      dump("caldavCheckSeverInfo4");
+      calendar.wrappedJSObject.completeCheckServerInfo = caldavCheckSeverInfo;
       caldavCheckServerInfo(listener, error);
     }; 
     calendar.wrappedJSObject.completeCheckServerInfo = wrapper;

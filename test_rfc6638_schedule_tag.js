@@ -22,6 +22,7 @@
  var calItem;
  var attendItem;
  var calendar;
+ var attenCalendar;
  var responseCounter = 0;
  var serverProperties = {
   port : 50001,
@@ -77,8 +78,14 @@ var attendee2 = {
 var resTemplate = {
 
   initPropfind : function initPropfind(request){
-
+    responseCounter++;
     let targetUser;
+    dump("responseCounter:"+responseCounter);
+
+    if(responseCounter>2){
+      attendee1.getctag = 63541198784;
+    }
+
     if(request.path=="/calendar/xpcshell/"){
       targetUser = calDavProperties;
       dump("\ncalenarOrg:");
@@ -336,7 +343,7 @@ function test_CreateResource(){
   attendItem = calItem.clone();
   attendItem.id = attendee1.itemID;
   yield promiseAddItem(attendItem,attenCalendar);
-  dump("yielded:AttpromiseAddItem");
+  dump("\nyielded:AttpromiseAddItem"+attendItem.id);
 
 }
 
@@ -347,6 +354,7 @@ function test_CreateResource(){
 add_task(function(){
   yield promise_org_ChangeEvent();
   dump("yieldedmodifyItem");
+  yield promise_attendee1_assert();
 });
 
 var newItem=null;
@@ -388,12 +396,30 @@ let retrieveItem = {
        do_check_eq(attendeesMod[1].id,attendeesOrig[1].id);
        do_check_eq(attendeesMod[1].isOrganizer,attendeesOrig[1].isOrganizer);
        do_check_eq(attendeesMod[1].role, attendeesOrig[1].role);
-     }
+     },
+    onOperationComplete: function() {}      
    };
 
 //now event should retrieve from attendee1's calendar and assert it against changed event of organizer's
+function promise_attendee1_assert(){
+  dump("\ncameattendeeassert:ctag:"+attenCalendar.id);
+  let deferred = Promise.defer(); 
+  dump("\ncameattendeeassert:"+attendItem);
+  attenCalendar.refresh();
+  dump("get refreshed item");
 
-
+  // attenCalendar.getItem(attendItem.id, {
+  //        onGetResult: function onGetResult(cal, stat, type, detail, count, items) {
+  //            retrievedItem = items[0];
+  //            dump("\nitem:"+retrievedItem.title);
+  //        },
+  //        onOperationComplete: function() {
+  //         deferred.resolve();
+  //        }
+  //      });
+  deferred.resolve();
+  return deferred.promise;
+}
 
 //handler for incoming requests to http://localhost:50001/calendar/event.ics
 function createResourceHandler(request,response) {

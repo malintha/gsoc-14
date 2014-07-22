@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
  Components.utils.import("resource://gre/modules/Promise.jsm");
-
  Components.utils.import("resource://testing-common/httpd.js");
  Components.utils.import("resource://gre/modules/NetUtil.jsm")
  Components.utils.import("resource://gre/modules/CSPUtils.jsm");
@@ -21,6 +20,7 @@
  const xmlHeader = '<?xml version="1.0" encoding="UTF-8"?>\n';
  var calItem;
  var attendItem;
+ var newItem;
  var calendar;
  var attenCalendar;
  var responseCounter = 0;
@@ -29,7 +29,7 @@
   name : "xpcshellServer"
 };
 
-var calDavProperties = {
+var organizer = {
   getctag : 1378022830,
   basePath : "http://localhost:"+serverProperties.port,
   calendarHomeSetset : "/calendar/",
@@ -70,10 +70,6 @@ var attendee1 = {
   scheduletag : 23456
 };
 
-var attendee2 = {
-  getetag : 2224233447,
-  scheduletag : 34567
-};
 
 var resTemplate = {
 
@@ -87,7 +83,7 @@ var resTemplate = {
     }
 
     if(request.path=="/calendar/xpcshell/"){
-      targetUser = calDavProperties;
+      targetUser = organizer;
       dump("\ncalenarOrg:");
     }
     else{
@@ -130,7 +126,7 @@ var resTemplate = {
     let tempItem;
     let targetUser;
     if(request.path=="/calendar/xpcshell/"){
-      targetUser = calDavProperties;
+      targetUser = organizer;
       tempItem = item;
       dump("\ncalenarOrgReport:");
     }
@@ -146,8 +142,8 @@ var resTemplate = {
       dump("titleupdated:"+ tempItem.title)
     }
 
-    item = createEventFromIcalString(calDavProperties.icalString);
-    item.id = calDavProperties.itemID;
+    item = createEventFromIcalString(organizer.icalString);
+    item.id = organizer.itemID;
 
     let responseQuery = xmlHeader+"\n"+ 
     '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
@@ -171,7 +167,7 @@ var resTemplate = {
     let tempItem;
     let targetUser;
     if(request.path=="/calendar/xpcshell/"){
-      targetUser = calDavProperties;
+      targetUser = organizer;
       tempItem = item;
       dump("\ncalenarOrgReport:");
     }
@@ -206,43 +202,43 @@ var resTemplate = {
   },
 
   principalProperty : function principalProperty(request){
-     dump("\nprincipalProperty:"+request.path+"\n");
-    let targetUser;
-    if(request.path=="/users/xpcshell/"){
-      targetUser = calDavProperties;
-      dump("\ncalenarOrgPrincipal:");
-    }
-    else{
-      targetUser = attendee1;
-      dump("\nattendeeCalPrincipal:");
-    }
+   dump("\nprincipalProperty:"+request.path+"\n");
+   let targetUser;
+   if(request.path=="/users/xpcshell/"){
+    targetUser = organizer;
+    dump("\ncalenarOrgPrincipal:");
+  }
+  else{
+    targetUser = attendee1;
+    dump("\nattendeeCalPrincipal:");
+  }
 
 
-    let responseQuery = '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
-    '  <D:response>\n' +
-    '    <D:href>/calendar/xpcshell/</D:href>\n' +
-    '    <D:propstat>\n' +
-    '      <D:status>HTTP/1.1 200 OK</D:status>\n' +
-    '      <D:prop>\n' +
-    '        <a:calendar-home-set>\n' +
-    '          <D:href xmlns:D="DAV:">'+targetUser.calendarHomeSetset+'</D:href>\n' +
-    '        </a:calendar-home-set>\n' +
-    '        <a:schedule-inbox-URL>\n' +
-    '          <D:href xmlns:D="DAV:">'+targetUser.scheduleInboxURL+'</D:href>\n' +
-    '        </a:schedule-inbox-URL>\n' +
-    '        <a:schedule-outbox-URL>\n' +
-    '          <D:href xmlns:D="DAV:">'+targetUser.scheduleOutboxURL+'</D:href>\n' +
-    '        </a:schedule-outbox-URL>\n' +
-    '        <a:calendar-user-address-set>\n';
+  let responseQuery = '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
+  '  <D:response>\n' +
+  '    <D:href>/calendar/xpcshell/</D:href>\n' +
+  '    <D:propstat>\n' +
+  '      <D:status>HTTP/1.1 200 OK</D:status>\n' +
+  '      <D:prop>\n' +
+  '        <a:calendar-home-set>\n' +
+  '          <D:href xmlns:D="DAV:">'+targetUser.calendarHomeSetset+'</D:href>\n' +
+  '        </a:calendar-home-set>\n' +
+  '        <a:schedule-inbox-URL>\n' +
+  '          <D:href xmlns:D="DAV:">'+targetUser.scheduleInboxURL+'</D:href>\n' +
+  '        </a:schedule-inbox-URL>\n' +
+  '        <a:schedule-outbox-URL>\n' +
+  '          <D:href xmlns:D="DAV:">'+targetUser.scheduleOutboxURL+'</D:href>\n' +
+  '        </a:schedule-outbox-URL>\n' +
+  '        <a:calendar-user-address-set>\n';
 
-    for (var i = 0; i < targetUser.userAddressSet.length; i++) {
-     responseQuery += '<D:href xmlns:D="DAV:">mailto:'+targetUser.userAddressSet[i]+'</D:href>\n';
-   }
-   responseQuery += '</a:calendar-user-address-set>\n' +
-   '      </D:prop>\n' +
-   '    </D:propstat>\n' +
-   '  </D:response>\n' +
-   '</D:multistatus>';
+  for (var i = 0; i < targetUser.userAddressSet.length; i++) {
+   responseQuery += '<D:href xmlns:D="DAV:">mailto:'+targetUser.userAddressSet[i]+'</D:href>\n';
+ }
+ responseQuery += '</a:calendar-user-address-set>\n' +
+ '      </D:prop>\n' +
+ '    </D:propstat>\n' +
+ '  </D:response>\n' +
+ '</D:multistatus>';
       //dump("responseQuery\n"+responseQuery);
       return responseQuery;
     }
@@ -282,95 +278,100 @@ var resTemplate = {
     server.registerPathHandler("/calendar/xpcshell/1b05e158-631a-445f-8c5a-5743b5a05169.ics", createResourceHandler);
     server.registerPathHandler("/calendar/", calendarHandler);
     server.registerPathHandler("/users/xpcshell/",principalHandler);
+
+    server.registerPathHandler("/calendar/attendee1/1234-1234-1234-1234.ics", createResourceHandler);
     server.start(serverProperties.port);
 
-    do_register_cleanup(() => server.stop(() => {}));
+    do_register_cleanup(() => server.stop(() => {
+
+    }));
     cal.getCalendarManager().startup({onResult: function() {
       run_next_test();
     }});
   }
 
-  function waitForInit(calendar) {
-    let deferred = Promise.defer();
-    let caldavCheckSeverInfo = calendar.wrappedJSObject.completeCheckServerInfo;
-    dump("caldavCheckSeverInfo1");
-    let wrapper = function(listener, error) {
-      if (Components.isSuccessCode(error)) {
-        dump("caldavCheckSeverInfo2");
-        deferred.resolve();
-      } else {
-        dump("caldavCheckSeverInfo3");
-        deferred.reject();
-      }   
-      dump("caldavCheckSeverInfo4");
-      calendar.wrappedJSObject.completeCheckServerInfo = caldavCheckSeverInfo;
-      caldavCheckServerInfo(listener, error);
-    }; 
-    calendar.wrappedJSObject.completeCheckServerInfo = wrapper;
-    return deferred.promise;
-  } 
+  add_task(test_doTest);
 
-  function promiseAddItem(item, calendar) {
-    let deferred = Promise.defer();
-    calendar.addItem(item, {
-      onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
-        dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
-        deferred.resolve(aStatus);
-      }
-    });
-    return deferred.promise;
-  }
-
-
-//method to create the item with calendar.addItem which is pointed to localhost
-add_task(test_CreateResource);
-
-function test_CreateResource(){
-  //get the string from caldavProperties
-  let icalString = calDavProperties.icalString;
+  function test_doTest(){
+  //get the string from organizer
+  let icalString = organizer.icalString;
 
   calItem = createEventFromIcalString(icalString);
-  calItem.id = calDavProperties.itemID;
+  calItem.id = organizer.itemID;
   let calmgr = cal.getCalendarManager();
-
   //initialization of organizer calendar
-  let calendarURL = calDavProperties.basePath+calDavProperties.scheduleInboxURL;
-  dump("calendarURL:"+calendarURL);
+  let calendarURL = organizer.basePath+organizer.scheduleInboxURL;
+
   calendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
-  calendar.name="testCalendar";
+  calendar.name="orgCalendar";
   calmgr.registerCalendar(calendar);
   yield waitForInit(calendar);
-  dump("yielded:calendar\n");
-  //initialization of tendee calendar
+  //initialization of attendee calendar
   let attendeeCalURL = attendee1.basePath+attendee1.scheduleInboxURL;
-  dump("attendeeCalURL:"+attendeeCalURL);
   attenCalendar = calmgr.createCalendar("caldav", Services.io.newURI(attendeeCalURL, null, null));
   attenCalendar.name = "attendeeCalendar";
   calmgr.registerCalendar(attenCalendar);
   yield waitForInit(attenCalendar);
-  dump("yielded:attendeeCalendar");
   //organizer creates the event in his calendar
   yield promiseAddItem(calItem, calendar);
-  dump("yielded:OrgpromiseAddItem");
   //server processes the event and automatically adds the item in attendee1's inbox
   attendItem = calItem.clone();
   attendItem.id = attendee1.itemID;
   yield promiseAddItem(attendItem,attenCalendar);
-  dump("\nyielded:AttpromiseAddItem"+attendItem.id);
-
+  //now t is in the organizers calendar and attendee1's calendars. Organizer does a change to the event now.
+  //Since the change is not a partstat change, schedule tags should be changed and the change should be merged with
+  //attendee1's calendar.
+  yield promise_org_ChangeEvent();
+  //yield promise_attendee1_assert();
+ // dump("done:");
+  yield waitForRefresh(attenCalendar);
+  yield promise_attendee1_assert();
+  dump("done1:");
 }
 
-//now t is in the organizers calendar and attendee1's calendars. Organizer does a change to the event now.
-//Since the change is not a partstat change, schedule tags should be changed and the change should be merged with
-//attendee1's calendar.
+function waitForRefresh(calendar) {
+    let deferred = Promise.defer();
+    let obs = cal.createAdapter(Components.interfaces.calIObserver, {
+      onLoad: function() {
+        calendar.removeObserver(obs);
+        dump("\nonloadobserver\n");
+        do_execute_soon(function() {
+          dump("des");
+           // calendar.getItem("111111-631a-445f-8c5a-5743b5a05169",retrieveAttendeeItem);
+           // dump("des1");
+           deferred.resolve();
+        });
+      }
+    });
+    calendar.addObserver(obs);
+    calendar.refresh();
+    return deferred.promise;
+}
 
-add_task(function(){
-  yield promise_org_ChangeEvent();
-  dump("yieldedmodifyItem");
-  yield promise_attendee1_assert();
-});
+let retrieveAttendeeItem = {
+  onGetResult: function(c, s, t, d, c, items) {
+    dump("fired"+ items);
+  },
+  onOperationComplete: function() {
+  } 
+};
 
-var newItem=null;
+function waitForInit(calendar) {
+  let deferred = Promise.defer();
+  let caldavCheckSeverInfo = calendar.wrappedJSObject.completeCheckServerInfo;
+  let wrapper = function(listener, error) {
+    if (Components.isSuccessCode(error)) {
+      deferred.resolve();
+    } else {
+      deferred.reject();
+    }   
+    calendar.wrappedJSObject.completeCheckServerInfo = caldavCheckSeverInfo;
+    caldavCheckServerInfo(listener, error);
+  }; 
+  calendar.wrappedJSObject.completeCheckServerInfo = wrapper;
+  return deferred.promise;
+} 
+
 function promise_org_ChangeEvent(){
 
   let deferred = Promise.defer(); 
@@ -383,7 +384,7 @@ function promise_org_ChangeEvent(){
   calendar.modifyItem(newItem,oldItem,{
     onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
      dump("\nItem successfully modified on calendar "+aCalendar.name);
-     do_execute_soon(function() {
+     do_execute_soon(function() { 
         //retrieve the item on behalf of the organizer, as organizer is in the principal user list.
         //considering the schedule-tag
         calendar.getItem(aitem.id, retrieveItem);
@@ -410,27 +411,38 @@ let retrieveItem = {
        do_check_eq(attendeesMod[1].isOrganizer,attendeesOrig[1].isOrganizer);
        do_check_eq(attendeesMod[1].role, attendeesOrig[1].role);
      },
-    onOperationComplete: function() {}      
+     onOperationComplete: function() {
+     }      
    };
 
 //now event should retrieve from attendee1's calendar and assert it against changed event of organizer's
 function promise_attendee1_assert(){
-  dump("\ncameattendeeassert:ctag:"+attenCalendar.id);
+  
   let deferred = Promise.defer(); 
-  dump("\ncameattendeeassert:"+attendItem);
-  attenCalendar.refresh();
-  dump("get refreshed item");
+  dump("\nassertattendee : "+attendItem.id);
+  // deferred.resolve();
+  attenCalendar.getItem(attendItem.id, {
+   onGetResult: function(c, s, t, d, c, items) {
+     retrievedItem = items[0];
+     dump("\ncamein"+retrievedItem.title);
+     do_check_eq(retrievedItem.title,"NewTitle");
+     deferred.resolve();
+   },
+   onOperationComplete: function() {
+   }
+ });
 
-  // attenCalendar.getItem(attendItem.id, {
-  //        onGetResult: function onGetResult(cal, stat, type, detail, count, items) {
-  //            retrievedItem = items[0];
-  //            dump("\nitem:"+retrievedItem.title);
-  //        },
-  //        onOperationComplete: function() {
-  //         deferred.resolve();
-  //        }
-  //      });
-  deferred.resolve();
+  return deferred.promise;
+}
+
+function promiseAddItem(item, calendar) {
+  let deferred = Promise.defer();
+  calendar.addItem(item, {
+    onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
+      dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
+      deferred.resolve(aStatus);
+    }
+  });
   return deferred.promise;
 }
 
@@ -455,10 +467,8 @@ function createResourceHandler(request,response) {
     }
 
     dump(method+"||"+matchheader);
-    dump("request body : "+body);
     //write the logic for creating resources
     if(method=="PUT" && matchheader=="*" && body){
-      dump("GETFILE: 1\n");
       //creating resources and adding changes.
       let fileOrg = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.org"]);
       let fileAtt1 = FileUtils.getFile("TmpD", ["111111-631a-445f-8c5a-5743b5a05169.ics.att1"]);
@@ -486,14 +496,14 @@ function createResourceHandler(request,response) {
         writeToFile(fileAtt1,body);
         writeToFile(fileAtt2,body);
 
-        calDavProperties.getetag++;
+        organizer.getetag++;
         //change the schedule tag of organizer object
-        calDavProperties.scheduletag++;
+        organizer.scheduletag++;
         //now changing attendees schedule tags since resources are updated
         attendee1.scheduletag++;
         attendee2.scheduletag++;
-        dump("new schedule-tag:"+calDavProperties.scheduletag);
-        dump("newEtag:"+calDavProperties.getetag);
+        dump("new schedule-tag:"+organizer.scheduletag);
+        dump("newEtag:"+organizer.getetag);
         response.setStatusLine(request.httpVersion, 200, "resource changed");
         response.write("");
       }

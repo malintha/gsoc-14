@@ -123,27 +123,30 @@ var resTemplate = {
 
   propPropfind : function propPropfind(request){
     dump("\npropPropfind\n");
-    let tempItem;
+
+    //to server organizer's requests
+    let tempItem = createEventFromIcalString(organizer.icalString);
     let targetUser;
+
     if(request.path=="/calendar/xpcshell/"){
       targetUser = organizer;
-      tempItem = item;
-      dump("\ncalenarOrgReport:");
+      tempItem.id = organizer.itemID;
+      dump("***organizerItemID:"+tempItem.id);
     }
     else{
       targetUser = attendee1;
-      tempItem = item;
       tempItem.id = attendee1.itemID;
-      dump("\nattendeeCalReport:");
+      dump("\n***attndeeItemID:"+tempItem.id);
     }
 
     if(responseCounter>2){
-      tempItem.title="NewTitle";
-      dump("titleupdated:"+ tempItem.title)
+      dump("\ncounter"+responseCounter);
+      tempItem.title = "NewTitle";
+      attendItem = tempItem.clone();
+      dump("\n**titleupdated:"+ tempItem.title)
     }
 
-    item = createEventFromIcalString(organizer.icalString);
-    item.id = organizer.itemID;
+
 
     let responseQuery = xmlHeader+"\n"+ 
     '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
@@ -153,7 +156,7 @@ var resTemplate = {
     '           <D:prop>\n'+
     '             <D:getetag>"'+targetUser.getetag+'"</D:getetag>\n'+
     '             <C:schedule-tag>"'+targetUser.scheduletag+'"</C:schedule-tag>\n'+
-    '             <C:calendar-data>'+tempItem+'</C:calendar-data>\n'+
+    '             <C:calendar-data>'+tempItem.icalString+'</C:calendar-data>\n'+
     '           </D:prop>\n'+
     '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
     '         </D:propstat>\n'+
@@ -317,45 +320,36 @@ var resTemplate = {
   //server processes the event and automatically adds the item in attendee1's inbox
   attendItem = calItem.clone();
   attendItem.id = attendee1.itemID;
+  dump("\n####attendeeItem:"+attendItem.id);
   yield promiseAddItem(attendItem,attenCalendar);
   //now t is in the organizers calendar and attendee1's calendars. Organizer does a change to the event now.
   //Since the change is not a partstat change, schedule tags should be changed and the change should be merged with
   //attendee1's calendar.
   yield promise_org_ChangeEvent();
-  //yield promise_attendee1_assert();
- // dump("done:");
-  yield waitForRefresh(attenCalendar);
   yield promise_attendee1_assert();
+  yield waitForRefresh(attenCalendar);
+  dump("done:waitForRefresh");
+  yield promise_attendee1_assert();
+
   dump("done1:");
 }
 
 function waitForRefresh(calendar) {
     let deferred = Promise.defer();
+    dump("canRefresh: "+calendar.canRefresh+"\n");
     let obs = cal.createAdapter(Components.interfaces.calIObserver, {
       onLoad: function() {
         calendar.removeObserver(obs);
         dump("\nonloadobserver\n");
-        do_execute_soon(function() {
-          dump("des");
-          dump("\n"+calendar.getProperty("name")); 
-            // calendar.getItem("111111-631a-445f-8c5a-5743b5a05169",retrieveAttendeeItem);
-            dump("des1");
-           deferred.resolve();
-        });
-      }
-    });
+        deferred.resolve();
+}
+});
     calendar.addObserver(obs);
     calendar.refresh();
+
     return deferred.promise;
 }
 
-let retrieveAttendeeItem = {
-  onGetResult: function(c, s, t, d, c, items) {
-    dump("fired"+ items);
-  },
-  onOperationComplete: function() {
-  } 
-};
 
 function waitForInit(calendar) {
   let deferred = Promise.defer();
@@ -418,21 +412,18 @@ let retrieveItem = {
 
 //now event should retrieve from attendee1's calendar and assert it against changed event of organizer's
 function promise_attendee1_assert(){
-  
   let deferred = Promise.defer(); 
-  dump("\nassertattendee : "+attendItem.id);
-  // deferred.resolve();
+  dump("\n*assertattendee : "+attendItem.id);
   attenCalendar.getItem(attendItem.id, {
-   onGetResult: function(c, s, t, d, c, items) {
+    onGetResult: function (cal, stat, type, detail, count, items) {
      retrievedItem = items[0];
      dump("\ncamein"+retrievedItem.title);
-     do_check_eq(retrievedItem.title,"NewTitle");
+    // do_check_eq(retrievedItem.title,"null");
      deferred.resolve();
    },
    onOperationComplete: function() {
    }
  });
-
   return deferred.promise;
 }
 
@@ -503,8 +494,8 @@ function createResourceHandler(request,response) {
         //now changing attendees schedule tags since resources are updated
         attendee1.scheduletag++;
         attendee2.scheduletag++;
-        dump("new schedule-tag:"+organizer.scheduletag);
-        dump("newEtag:"+organizer.getetag);
+        dump("new org schedule-tag:"+organizer.scheduletag);
+        dump("new org Etag:"+organizer.getetag);
         response.setStatusLine(request.httpVersion, 200, "resource changed");
         response.write("");
       }

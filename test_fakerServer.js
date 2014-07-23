@@ -3,30 +3,30 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
  Components.utils.import("resource://gre/modules/Promise.jsm");
-
  Components.utils.import("resource://testing-common/httpd.js");
  Components.utils.import("resource://gre/modules/NetUtil.jsm")
  Components.utils.import("resource://gre/modules/CSPUtils.jsm");
  Components.utils.import("resource://calendar/modules/calUtils.jsm");
  Components.utils.import("resource://gre/modules/FileUtils.jsm");
+ Components.utils.import("resource:///modules/Services.jsm");
 
-Components.utils.import("resource:///modules/Services.jsm");
-Services.prefs.setBoolPref("javascript.options.showInConsole", true);
-Services.prefs.setBoolPref("browser.dom.window.dump.enabled", true);
-Services.prefs.setBoolPref("calendar.debug.log", true);
-Services.prefs.setBoolPref("calendar.debug.log.verbose", true);
+ Services.prefs.setBoolPref("javascript.options.showInConsole", true);
+ Services.prefs.setBoolPref("browser.dom.window.dump.enabled", true);
+ Services.prefs.setBoolPref("calendar.debug.log", true);
+ Services.prefs.setBoolPref("calendar.debug.log.verbose", true);
 
-var item; //using this temporary
-var currentScheduleTag;
-var currentEtag;
-const xmlHeader = '<?xml version="1.0" encoding="UTF-8"?>\n';
-var item;
+ let item;
+ let currentScheduleTag;
+ let currentEtag;
+ const xmlHeader = '<?xml version="1.0" encoding="UTF-8"?>\n';
 
+//set the server preferences
 var serverProperties = {
   port : 50001,
   name : "xpcshellServer"
 };
 
+//set calendar properties
 var calDavProperties = {
   getctag : 1378022830,
   basePath : "http://localhost:"+serverProperties.port,
@@ -96,39 +96,39 @@ var resTemplate = {
     '           <D:prop>\n'+
     '             <D:getetag>"'+calDavProperties.getetag+'"</D:getetag>\n'+
  // '             <C:schedule-tag>"'+scheduleTagGenerator("new")+'"</C:schedule-tag>\n'+
-    '             <C:calendar-data>'+item+'</C:calendar-data>\n'+
-    '           </D:prop>\n'+
-    '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
-    '         </D:propstat>\n'+
-    '     </D:response>\n'+
-    '   </D:multistatus>\n';
-    return responseQuery;
-  },
-
-  reportPropfind : function reportPropfind(request){
-
-    let responseQuery = xmlHeader+"\n"+ 
-        ' <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
-        '   <D:response>\n'+
-        '     <D:href>'+request.path+calDavProperties.itemID+'.ics</D:href>\n'+
-        '     <D:propstat>\n'+
-        '        <D:prop>\n'+
-        '         <D:getetag>"'+calDavProperties.getetag+'"</D:getetag>\n'+
-      // '<C:schedule-tag>"'+scheduleTagGenerator("new")+'"</C:schedule-tag>\n'+
-        '         <C:calendar-data>'+item+
-        '         </C:calendar-data>\n'+
-        '        </D:prop>\n'+
-        '        <D:status>HTTP/1.1 200 OK</D:status>\n'+
-        '        </D:propstat>\n'+
-        '   </D:response>\n'+
-        ' </D:multistatus>\n';
-  
-
-    return responseQuery;
+ '             <C:calendar-data>'+item+'</C:calendar-data>\n'+
+ '           </D:prop>\n'+
+ '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
+ '         </D:propstat>\n'+
+ '     </D:response>\n'+
+ '   </D:multistatus>\n';
+ return responseQuery;
 },
 
-principalSearch : function principalSearch(request){
-    let responseQuery = xmlHeader +
+reportPropfind : function reportPropfind(request){
+
+  let responseQuery = xmlHeader+"\n"+ 
+  ' <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
+  '   <D:response>\n'+
+  '     <D:href>'+request.path+calDavProperties.itemID+'.ics</D:href>\n'+
+  '     <D:propstat>\n'+
+  '        <D:prop>\n'+
+  '         <D:getetag>"'+calDavProperties.getetag+'"</D:getetag>\n'+
+      // '<C:schedule-tag>"'+scheduleTagGenerator("new")+'"</C:schedule-tag>\n'+
+      '         <C:calendar-data>'+item+
+      '         </C:calendar-data>\n'+
+      '        </D:prop>\n'+
+      '        <D:status>HTTP/1.1 200 OK</D:status>\n'+
+      '        </D:propstat>\n'+
+      '   </D:response>\n'+
+      ' </D:multistatus>\n';
+
+
+      return responseQuery;
+    },
+
+    principalSearch : function principalSearch(request){
+      let responseQuery = xmlHeader +
       '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
       '  <D:response>\n' +
       '    <D:href>/calendar/xpcshell/</D:href>\n' +
@@ -144,23 +144,23 @@ principalSearch : function principalSearch(request){
       '        <a:schedule-outbox-URL>\n' +
       '          <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
       '        </a:schedule-outbox-URL>\n' +
-'        <a:calendar-user-address-set>\n';
+      '        <a:calendar-user-address-set>\n';
       for (var i = 0; i < calDavProperties.userAddressSet.length; i++) {
        responseQuery += '<D:href xmlns:D="DAV:">mailto:'+calDavProperties.userAddressSet[i]+'</D:href>\n';
-      }
-      responseQuery += '</a:calendar-user-address-set>\n' +
-      '      </D:prop>\n' +
-      '    </D:propstat>\n' +
-      '  </D:response>\n' +
-      '</D:multistatus>';
-      dump("responseQuery\n"+responseQuery);
-      return responseQuery;
-  }
+     }
+     responseQuery += '</a:calendar-user-address-set>\n' +
+     '      </D:prop>\n' +
+     '    </D:propstat>\n' +
+     '  </D:response>\n' +
+     '</D:multistatus>';
+     dump("responseQuery\n"+responseQuery);
+     return responseQuery;
+   }
 
-};
+ };
 
 
-function registerFakeUMimTyp() {
+ function registerFakeUMimTyp() {
   try {
     Services.dirsvc.get("UMimTyp", Components.interfaces.nsIFile);
   } catch (e) {
@@ -224,19 +224,12 @@ function run_test() {
   }
 
 //method to create the item with calendar.addItem which is pointed to localhost
-add_task(test_CreateResource);
+add_task(test_doFakeServer);
 
-function test_CreateResource(){
-  //get the string from caldavProperties
-  let icalString = "BEGIN:VEVENT\n" + 
-  "DTSTART:20140725T230000\n" +
-  "DTEND:20140726T000000\n" +
-  "LOCATION:Paris\n"+
-  "TRANSP:OPAQUE\n"+
-  "END:VEVENT";
-
+function test_doFakeServer(){
+  let icalString = calDavProperties.icalString;
   var item = createEventFromIcalString(icalString);
-  item.id = "1b05e158-631a-445f-8c5a-5743b5a05169";
+  item.id = calDavProperties.itemID;
   let calmgr = cal.getCalendarManager();
   let calendarURL = calDavProperties.basePath+calDavProperties.scheduleInboxURL;
   dump(calendarURL);
@@ -252,27 +245,22 @@ function test_CreateResource(){
 //handler for incoming requests to http://localhost:50001/calendar/event.ics
 function createResourceHandler(request,response) {
   try {
-    dump("In createResource Handler");
     //get the request and set the response data
     let is = request.bodyInputStream;
     let body = NetUtil.readInputStreamToString(is, is.available(),  { charset: "UTF-8" });
     item = body;
     let method = request.method;
     let matchheader = request.getHeader("If-None-Match");
-    dump(method+"||"+matchheader);
-    dump("request body : "+body);
-    //write the logic for creating resources
+    //creating resources
     if(method=="PUT" && matchheader=="*" && body){
       dump("GETFILE: 1\n");
       let file = FileUtils.getFile("TmpD", ["1b05e158-631a-445f-8c5a-5743b5a05169.ics.tmp"]);
       file.createUnique(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, parseInt("0600", 8));
         //this creates the file at /tmp/
         dump("file_created at : "+file.path);
-        //deleting after the test should also implement. no method found
         writeToFile(file,body);
         response.setStatusLine(request.httpVersion, 201, "resource created");
         response.write("");
-        //after this, there will be a sequence of requests. create those handlers :|
       } else{
         response.setStatusLine(request.httpVersion, 400, "Bad Request");
       }
@@ -291,80 +279,71 @@ function createResourceHandler(request,response) {
       body = "";
     }
 
-    dump("path:"+request.path+"method:"+request.method+"\n"+body);
     try {
 
-    //problem at calDavRequestHandlers #984 this.calendar.addTargetCalendarItem
-    //caldav #1116 this.mOfflineStorage.adoptItem(item, aListener);
-    if (request.method == "PROPFIND" && body.indexOf("current-user-prin") > -1) {
-      dump("camehere1");
+      if (request.method == "PROPFIND" && body.indexOf("current-user-prin") > -1) {
         let resText = resTemplate.initPropfind(request);
         response.setStatusLine(request.httpVersion, 207, "Multi-Status");
         response.setHeader("content-type","text/xml");
         response.write(resText);
       } 
 
-    else if (request.method == "PROPFIND" && body.indexOf("getetag") > -1) {
-          dump("camehere3");
-         let resText = resTemplate.propPropfind(request);
-         response.setStatusLine(request.httpVersion, 207, "Multi-Status");
-         response.setHeader("content-type","text/xml");
-         response.write(resText);
-   } 
+      else if (request.method == "PROPFIND" && body.indexOf("getetag") > -1) {
+       let resText = resTemplate.propPropfind(request);
+       response.setStatusLine(request.httpVersion, 207, "Multi-Status");
+       response.setHeader("content-type","text/xml");
+       response.write(resText);
+     } 
 
-   else if (request.method=="REPORT") {
-    dump("camehere4");
-    let reportResText = resTemplate.reportPropfind(request);
-        dump("camehere5"+reportResText);
-        //calDavRequestHandlers #759
-        response.setStatusLine(request.httpVersion, 207, "Multi-Status");
-        response.setHeader("content-type","text/xml");
-        response.write(reportResText);
-        //saxParser throws fatal error on the response
-      } else {
-        dump("### GOT INVALID METHOD " + request.method + "\n");
-        response.setStatusLine(request.httpVersion, 400, "Bad Request");
-      }
-    } catch (e) {
-      dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
-    }
-  }
-
-  function calendarHandler(request,response){
-    if (request.method == "OPTIONS") {
-      response.setStatusLine(request.httpVersion, 200, "OK");
-      response.setHeader("DAV", "1, 2, access-control, calendar-access, calendar-schedule, calendar-auto-schedule, calendar-proxy, calendar-query-extended, extended-mkcol, calendarserver-principal-property-search")
-      response.write("");
+     else if (request.method=="REPORT") {
+      let reportResText = resTemplate.reportPropfind(request);
+      response.setStatusLine(request.httpVersion, 207, "Multi-Status");
+      response.setHeader("content-type","text/xml");
+      response.write(reportResText);
     } else {
       dump("### GOT INVALID METHOD " + request.method + "\n");
       response.setStatusLine(request.httpVersion, 400, "Bad Request");
     }
+    
+  } catch (e) {
+    dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
   }
+}
 
-  function principalHandler(request, response) {
-          dump("came here6");
-    if (request.method == "PROPFIND") {
+function calendarHandler(request,response){
+  if (request.method == "OPTIONS") {
+    response.setStatusLine(request.httpVersion, 200, "OK");
+    response.setHeader("DAV", "1, 2, access-control, calendar-access, calendar-schedule, calendar-auto-schedule, calendar-proxy, calendar-query-extended, extended-mkcol, calendarserver-principal-property-search")
+    response.write("");
+  } else {
+    dump("### GOT INVALID METHOD " + request.method + "\n");
+    response.setStatusLine(request.httpVersion, 400, "Bad Request");
+  }
+}
 
-      let principalResText = resTemplate.principalSearch(request);
-      response.setStatusLine(request.httpVersion, 207, "Multi-Status");
-      response.write(principalResText);
-    } else {
-      dump("### PRINCIPAL  HANDLER GOT INVALID METHOD " + request.method + "\n");
-      response.setStatusLine(request.httpVersion, 400, "Bad Request");
+function principalHandler(request, response) {
+  if (request.method == "PROPFIND") {
+
+    let principalResText = resTemplate.principalSearch(request);
+    response.setStatusLine(request.httpVersion, 207, "Multi-Status");
+    response.write(principalResText);
+  } else {
+    dump("### PRINCIPAL  HANDLER GOT INVALID METHOD " + request.method + "\n");
+    response.setStatusLine(request.httpVersion, 400, "Bad Request");
+  }
+}
+
+function writeToFile(file,data){
+  let ostream = FileUtils.openSafeFileOutputStream(file);
+  let converter = Components.classes["@mozilla.org/intl/scriptableunicodeconverter"].
+  createInstance(Components.interfaces.nsIScriptableUnicodeConverter);
+  converter.charset = "UTF-8";
+  let istream = converter.convertToInputStream(data);
+  NetUtil.asyncCopy(istream, ostream, function(status) {
+    if (!Components.isSuccessCode(status)) {
+      return;
     }
-  }
-
-  function writeToFile(file,data){
-    let ostream = FileUtils.openSafeFileOutputStream(file);
-    let converter = Components.classes["@mozilla.org/intl/scriptableunicodeconverter"].
-    createInstance(Components.interfaces.nsIScriptableUnicodeConverter);
-    converter.charset = "UTF-8";
-    let istream = converter.convertToInputStream(data);
-    NetUtil.asyncCopy(istream, ostream, function(status) {
-      if (!Components.isSuccessCode(status)) {
-        return;
-      }
       // Data has been written to the file.
     });
-  }
+}
 

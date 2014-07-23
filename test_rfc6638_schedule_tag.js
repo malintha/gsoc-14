@@ -337,8 +337,9 @@ function waitForRefresh(calendar) {
         dump("\nonloadobserver\n");
         do_execute_soon(function() {
           dump("des");
-           // calendar.getItem("111111-631a-445f-8c5a-5743b5a05169",retrieveAttendeeItem);
-           // dump("des1");
+          dump("\n"+calendar.getProperty("name")); 
+            // calendar.getItem("111111-631a-445f-8c5a-5743b5a05169",retrieveAttendeeItem);
+            dump("des1");
            deferred.resolve();
         });
       }

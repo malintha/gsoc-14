@@ -15,6 +15,123 @@
  Services.prefs.setBoolPref("calendar.debug.log", true);
  Services.prefs.setBoolPref("calendar.debug.log.verbose", true);
 
+  function calDavFakeServer(){
+    this.httpServer = new HttpServer();
+    this.calmgr = cal.getCalendarManager();
+    this.id = "";
+    this.localPort;
+    this.calDavPropertyBag;
+    this.registerPrefixHandler("/",this.handler);    
+ }
+ 
+  calDavFakeServer.prototype = {
+
+      testdump: function(){
+        dump("####dump");
+      },
+
+      initServer: function init_CalDav_server() {
+        this.httpServer.start(-1);
+        this.localPort = this.httpServer.identity.primaryPort;
+        return this.localPort;
+      },
+
+      initCalendar: function init_CalDavCalendar(calDavPropertyBag) {
+        
+        /**
+        * calDavPropertyBag = {
+        *   name = "",
+        *   id = "",
+        *   scheduleInboxURL : "",
+        *   schedule-outbox-URL: "",
+        *   userPrincipalHref : "",
+        *   calendarHomeSetset : "",
+        *   ctag : "",
+        *   supportedComps : [],
+        *   userAddressSet : [],
+        * }
+        */
+
+        this.calDavPropertyBag = calDavPropertyBag;
+        let calUrl = "http://localhost"+this.localPort+calDavPropertyBag.scheduleInboxURL;
+        this.storage = calmgr.createCalendar("memory", Services.io.newURI(calendarURL, null, null));
+        this.storage.name = calDavPropertyBag.name;
+        this.storage.id = calDavPropertyBag.id;
+        this.calmgr.registerCalendar(this.storage);
+        //this.pstorage = cal.async.promisifyCalendar(this.storage);
+        yield this.waitForInit(this.storage);
+      },
+
+      waitForInit: function waitForInit(calendar){
+        let deferred = Promise.defer();
+        let caldavCheckSeverInfo = calendar.wrappedJSObject.completeCheckServerInfo;
+        let wrapper = function(listener, error) {
+          if (Components.isSuccessCode(error)) {
+            deferred.resolve();
+          } else {
+            deferred.reject();
+          }
+          calendar.wrappedJSObject.completeCheckServerInfo = caldavCheckServerInfo;
+          caldavCheckServerInfo(listener, error);
+        };
+        calendar.wrappedJSObject.completeCheckServerInfo = wrapper;
+      return deferred.promise;
+      },
+
+      handler: function mainHandler(request, response) {
+        response.write("OK");  
+      }
+    }
+
+  function calDavSogoServer() {
+    id = 1;
+    dump("came");
+  }
+
+  var sogoPropertyBag = {
+        name : "sogo",
+        id : "calendar1",
+        scheduleInboxURL : "/sogo/",
+        scheduleoutboxURL: "/sogo/",
+        userPrincipalHref : "/sogo/",
+        calendarHomeSetset : "/sogo/",
+        ctag : "123456",
+        supportedComps : [],
+        userAddressSet : []
+  };
+
+  function run_test() {
+    dump("testing");
+    calDavSogoServer.prototype.__proto__ = calDavFakeServer.prototype;
+    let i = calDavSogoServer.initServer();
+    dump(i);
+  // do_get_profile();
+  // registerFakeUMimTyp();
+
+  //   //start server
+  //   var server = new HttpServer();
+  //   server.registerPathHandler("/calendar/xpcshell/1b05e158-631a-445f-8c5a-5743b5a05169.ics", createResourceHandler);
+  //   server.registerPathHandler("/calendar/", calendarHandler);
+  //   server.registerPathHandler("/calendar/xpcshell/", initPropfindHandler);
+  //   server.registerPathHandler("/users/xpcshell/",principalHandler);
+  //   server.start(serverProperties.port);
+
+  //   do_register_cleanup(() => server.stop(() => {}));
+  //   cal.getCalendarManager().startup({onResult: function() {
+  //     run_next_test();
+  //   }});
+  }
+
+
+
+
+
+
+
+
+
+
+
  let item;
  let currentScheduleTag;
  let currentEtag;
@@ -22,7 +139,7 @@
 
 //set the server preferences
 var serverProperties = {
-  port : 50001,
+  port : (-1),
   name : "xpcshellServer"
 };
 
@@ -35,7 +152,7 @@ var calDavProperties = {
   scheduleOutboxURL : "/calendar/xpcshell",
   userPrincipalHref : "/users/xpcshell/",
 
-  icalString :      "BEGIN:VEVENT\n" + 
+  icalString :      "BEGIN:VEVENT\n" +
                     "DTSTART:20140725T230000\n" +
                     "DTEND:20140726T000000\n" +
                     "LOCATION:Paris\n"+
@@ -88,7 +205,7 @@ var resTemplate = {
     item = createEventFromIcalString(calDavProperties.icalString);
     item.id = calDavProperties.itemID;
 
-    let responseQuery = xmlHeader+"\n"+ 
+    let responseQuery = xmlHeader+"\n"+
     '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
     '     <D:response>\n'+
     '       <D:href>'+request.path+calDavProperties.itemID+'.ics</D:href>\n'+
@@ -107,7 +224,7 @@ var resTemplate = {
 
 reportPropfind : function reportPropfind(request){
 
-  let responseQuery = xmlHeader+"\n"+ 
+  let responseQuery = xmlHeader+"\n"+
   ' <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
   '   <D:response>\n'+
   '     <D:href>'+request.path+calDavProperties.itemID+'.ics</D:href>\n'+
@@ -178,23 +295,9 @@ reportPropfind : function reportPropfind(request){
 }
 
 
-function run_test() {
-  do_get_profile();
-  registerFakeUMimTyp();
 
-    //start server
-    var server = new HttpServer(); 
-    server.registerPathHandler("/calendar/xpcshell/1b05e158-631a-445f-8c5a-5743b5a05169.ics", createResourceHandler);
-    server.registerPathHandler("/calendar/", calendarHandler);
-    server.registerPathHandler("/calendar/xpcshell/", initPropfindHandler);
-    server.registerPathHandler("/users/xpcshell/",principalHandler);
-    server.start(serverProperties.port);
 
-    do_register_cleanup(() => server.stop(() => {}));
-    cal.getCalendarManager().startup({onResult: function() {
-      run_next_test();
-    }});
-  }
+
 
   function waitForInit(calendar) {
     let deferred = Promise.defer();
@@ -204,13 +307,13 @@ function run_test() {
         deferred.resolve();
       } else {
         deferred.reject();
-      }   
+      }
       calendar.wrappedJSObject.completeCheckServerInfo = caldavCheckServerInfo;
       caldavCheckServerInfo(listener, error);
-    }; 
+    };
     calendar.wrappedJSObject.completeCheckServerInfo = wrapper;
     return deferred.promise;
-  } 
+  }
 
   function promiseAddItem(item, calendar) {
     let deferred = Promise.defer();
@@ -286,14 +389,14 @@ function createResourceHandler(request,response) {
         response.setStatusLine(request.httpVersion, 207, "Multi-Status");
         response.setHeader("content-type","text/xml");
         response.write(resText);
-      } 
+      }
 
       else if (request.method == "PROPFIND" && body.indexOf("getetag") > -1) {
        let resText = resTemplate.propPropfind(request);
        response.setStatusLine(request.httpVersion, 207, "Multi-Status");
        response.setHeader("content-type","text/xml");
        response.write(resText);
-     } 
+     }
 
      else if (request.method=="REPORT") {
       let reportResText = resTemplate.reportPropfind(request);
@@ -304,7 +407,7 @@ function createResourceHandler(request,response) {
       dump("### GOT INVALID METHOD " + request.method + "\n");
       response.setStatusLine(request.httpVersion, 400, "Bad Request");
     }
-    
+
   } catch (e) {
     dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
   }

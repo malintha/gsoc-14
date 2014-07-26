@@ -30,11 +30,6 @@ fakeServer.prototype = {
         this.storage = this.serverCalmgr.createCalendar("memory", Services.io.newURI(this.calUrl, null, null));
         
     },
-    initPropfind: function initPropfind(x,request) {
-        //resolve the scope problem
-        let response = sogoObj._responseTemplates._initPropfind;
-        return response;
-    },
     getLocalPort: function get_LocalPort() {
         return this.httpServer.identity.primaryPort;
     },
@@ -66,6 +61,11 @@ fakeServer.prototype = {
             dump('\n\n#### EEE: ' + e + e.fileName + e.lineNumber + '\n');
         }
      },
+    initPropfind: function initPropfind(x,request) {
+        //resolve the scope problem
+        let response = sogoObj._responseTemplates._initPropfind;
+        return response;
+    },
     test: function test(){
        let a = this.initPropfind('a','b');
         dump("\n\n###"+a);

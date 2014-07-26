@@ -24,14 +24,12 @@ function fakeServer() {
 }
 
 fakeServer.prototype = {
-    
     init: function init_storage_calendar(scheduleInboxURL) {
         this.serverCalmgr = cal.getCalendarManager();
         this.calUrl = "http://localhost"+this.localPort+scheduleInboxURL;
         this.storage = this.serverCalmgr.createCalendar("memory", Services.io.newURI(this.calUrl, null, null));
         
     },
-    
     initPropfind: function initPropfind(x,request) {
         //resolve the scope problem
         let response = sogoObj._responseTemplates._initPropfind;
@@ -63,10 +61,7 @@ fakeServer.prototype = {
             } else {
                 dump('### GOT INVALID METHOD ' + request.method + '\n');
                 response.setStatusLine(request.httpVersion, 400, 'Bad Request');
-                
             }
-            
-            
         } catch (e) {
             dump('\n\n#### EEE: ' + e + e.fileName + e.lineNumber + '\n');
         }
@@ -96,7 +91,6 @@ function sogo() {
                          'user3@example.com'
                         ],
     },
-
     this._responseTemplates = {
         _initPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
             '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:b="http://calendarserver.org/ns/" xmlns:D="DAV:">\n' +
@@ -128,7 +122,6 @@ function sogo() {
 }
 
 sogo.prototype = new fakeServer();
-
 var sogoObj = new sogo();
 sogoObj.id = "Sogo1";
 

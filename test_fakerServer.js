@@ -46,15 +46,15 @@ fakeServer.prototype = {
         dump("\n### prefixHandler"+ (request.path == sogoObj._propertyBag.scheduleInboxURL));       
         try {
             if(request.path == sogoObj._propertyBag.scheduleInboxURL){
-                //PUT requests to /event.ics and PROPFIND,REPORT to / come here ---------------------------------
-                dump("##came");
-                fakeServer.prototype.test();
+                //PUT requests to /event.ics and PROPFIND,REPORT to / come here --------------------------------- /calendar/xpcshell/
                 fakeServer.prototype.initPropfind(request,response);
             }
             else if (request.path == sogoObj._propertyBag.calendarHomeSetset){
+                //OPTIONS should come here----------------------------------------------------------------------- /calendar/
                 fakeServer.prototype.calendarHandler(request,response);
             }
             else if(request.path == sogoObj._propertyBag.userPrincipalHref){
+                //OPTIONS should come here----------------------------------------------------------------------- working here
                 let responseText = this.principalHandler(request,response);
             }
             else {
@@ -109,9 +109,24 @@ fakeServer.prototype = {
         }
     },
     
-    calendarHandler: function calendarHandler(x,request) {
-        let response = sogoObj._responseTemplates._options;
-        return response;
+    calendarHandler: function calendarHandler(request,response) {
+        //resolve the scope problem
+        dump("####OPTIONS "+request.method);
+        try {
+            if (request.method == "OPTIONS") {
+                response.setStatusLine(request.httpVersion, 200, "OK");
+                response.setHeader("DAV", "1, 2, access-control, calendar-access, calendar-schedule, calendar-auto-schedule, calendar-proxy, calendar-query-extended, extended-mkcol, calendarserver-principal-property-search")
+                response.write("");
+                response.finish();
+            } else {
+                dump("### GOT INVALID METHOD " + request.method + "\n");
+                response.setStatusLine(request.httpVersion, 400, "Bad Request");
+            }
+        }
+        catch(e) {
+            dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
+        }
+
     },
     
     test: function test(){
@@ -232,19 +247,19 @@ add_task(test_doFakeServer);
 
 
 function test_doFakeServer(){
-    
-  let icalString = client.icalString;
-  var item = createEventFromIcalString(icalString);
-  item.id = client.itemID;
-  let calmgr = cal.getCalendarManager();
-  let calendarURL = 'http://localhost:'+sogoObj.getLocalPort()+sogoObj._propertyBag.scheduleInboxURL;
-  dump(calendarURL);
-  let calendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
-  calendar.name="testCalendar";
-  calmgr.registerCalendar(calendar);
-  dump('registerCalendar');
-  yield waitForInit(calendar);
-  dump('waitForInit');
+
+    let icalString = client.icalString;
+    var item = createEventFromIcalString(icalString);
+    item.id = client.itemID;
+    let calmgr = cal.getCalendarManager();
+    let calendarURL = 'http://localhost:'+sogoObj.getLocalPort()+sogoObj._propertyBag.scheduleInboxURL;
+    dump(calendarURL);
+    let calendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
+    calendar.name="testCalendar";
+    calmgr.registerCalendar(calendar);
+    dump('registerCalendar');
+    yield waitForInit(calendar);
+    dump('waitForInit');
 }
 
 

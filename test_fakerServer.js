@@ -21,54 +21,93 @@ function fakeServer() {
     this.httpServer.start(50002);
     this.localPort = this.httpServer.identity.primaryPort;
     this.httpServer.registerPathHandler('/', this.prefixHandler);
+    //handlers
+//     this.httpServer.registerPathHandler("/calendar/xpcshell/1b05e158-631a-445f-8c5a-5743b5a05169.ics", createResourceHandler);
+
 }
 
 fakeServer.prototype = {
+    
     init: function init_storage_calendar(scheduleInboxURL) {
         this.serverCalmgr = cal.getCalendarManager();
         this.calUrl = "http://localhost"+this.localPort+scheduleInboxURL;
         this.storage = this.serverCalmgr.createCalendar("memory", Services.io.newURI(this.calUrl, null, null));
         
     },
+
     getLocalPort: function get_LocalPort() {
         return this.httpServer.identity.primaryPort;
     },
+    
     prefixHandler: function main_PrefixHandler(request, response) {
         dump("\n### prefixHandler");
+        let is = request.bodyInputStream;
+        let body = NetUtil.readInputStreamToString(is, is.available(), {
+            charset: 'UTF-8'
+        });
         try {
-            if (request.method == 'PROPFIND' && body.indexOf('current-user-prin') > -1) {
-                response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
-                response.setHeader('content-type', 'text/xml');
-                resText = fakeServer.prototype.initPropfind(this, request);
-                response.write(resText);
-            } 
-            else if (request.method == 'PROPFIND' && body.indexOf('getetag') > - 1) {
-    //             let resText = this.propPropfind(request);
-                response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
-                response.setHeader('content-type', 'text/xml');
-    //             response.write(resText);
-            } 
-            else if (request.method == 'REPORT') {
-    //             let reportResText = this.reportPropfind(request);
-                response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
-                response.setHeader('content-type', 'text/xml');
-    //             response.write(reportResText);
-            } else {
-                dump('### GOT INVALID METHOD ' + request.method + '\n');
+            if(request.path == this._propertyBag.scheduleInboxURL){
+                //PUT requests to /event.ics and PROPFIND,REPORT to / come here ---------------------------------
+                this.initPropfindHandler(this,body,request,response);
+            }
+            else if (request.path == this._propertyBag.calendarHomeSetset){
+                this.calendarHandler(this,body,request,response);
+            }
+            else if(request.path == this._propertyBag.userPrincipalHref){
+                let responseText = this.principalHandler(this,body,request,response);
+            }
+            else {
+                dump("###Recieved unidentified request : "+request.path+"\n"+body);
                 response.setStatusLine(request.httpVersion, 400, 'Bad Request');
             }
+
         } catch (e) {
             dump('\n\n#### EEE: ' + e + e.fileName + e.lineNumber + '\n');
         }
      },
-    initPropfind: function initPropfind(x,request) {
+        
+    initPropfind: function initPropfind(x,body,request,response) {
         //resolve the scope problem
-        let response = sogoObj._responseTemplates._initPropfind;
+        try {
+            if (request.method == 'PROPFIND' && body.indexOf('current-user-prin') > -1){
+                response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
+                response.setHeader('content-type', 'text/xml');
+                response.write(sogoObj._responseTemplates._initPropfind);
+                response.finish();
+            }
+            else if (request.method == 'PROPFIND' && body.indexOf('getetag') > -1) {
+                response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
+                response.setHeader('content-type', 'text/xml');
+                response.write(sogoObj._responseTemplates._calDataPropfind);
+            }
+            else if (request.method == 'REPORT') {
+                response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
+                response.setHeader('content-type', 'text/xml');
+                response.write(sogoObj._responseTemplates.reportPropfind);
+            }
+            else if (request.method == 'PUT') {
+                sogoObj.storage.addItem();
+
+            }
+            else {
+                dump('### GOT INVALID METHOD ' + request.method + '\n');
+                response.setStatusLine(request.httpVersion, 400, 'Bad Request');
+            }
+        }
+        catch (e) {
+            dump('\n\n#### EEE: ' + e + e.fileName + e.lineNumber + '\n');
+        }
+    },
+    
+    calendarHandler: function calendarHandler(x,request) {
+        let response = sogoObj._responseTemplates._options;
         return response;
     },
+    
+    
     test: function test(){
        let a = this.initPropfind('a','b');
-        dump("\n\n###"+a);
+       dump("\n\n###"+a);
     }
 
 };
@@ -91,6 +130,7 @@ function sogo() {
                          'user3@example.com'
                         ],
     },
+
     this._responseTemplates = {
         _initPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
             '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:b="http://calendarserver.org/ns/" xmlns:D="DAV:">\n' +
@@ -117,11 +157,28 @@ function sogo() {
             '       </D:prop>\n' +
             '     </D:propstat>\n' +
             '   </D:response>\n' +
-            ' </D:multistatus>'
-    }
+            ' </D:multistatus>',
+        
+        _calDataPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
+            '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n' +
+            '     <D:response>\n' +
+            '       <D:href>' + this._propertyBag.scheduleInboxURL+{itemId} + '.ics</D:href>\n' +
+            '         <D:propstat>\n' +
+            '           <D:prop>\n' +
+            '             <D:getetag>"' /*get the etag from server calendar*/ + '"</D:getetag>\n' +
+         // '             <C:schedule-tag>"'+scheduleTagGenerator("new")+'"</C:schedule-tag>\n'+
+            //get the item from the calendar and append the icalString
+            '             <C:calendar-data>'/* + item */+ '</C:calendar-data>\n' +
+            '           </D:prop>\n' +
+            '           <D:status>HTTP/1.1 200 OK</D:status>\n' +
+            '         </D:propstat>\n' +
+            '     </D:response>\n' +
+            '   </D:multistatus>\n',
+        
 }
 
 sogo.prototype = new fakeServer();
+
 var sogoObj = new sogo();
 sogoObj.id = "Sogo1";
 
@@ -129,4 +186,17 @@ function run_test() {
     sogoObj.init(sogoObj._propertyBag.scheduleInboxURL);
     dump("### Server "+sogoObj.id+" started on "+sogoObj.getLocalPort());
     do_test_pending();
+    // do_get_profile();
+    // registerFakeUMimTyp();
+    //   //start server
+    //   var server = new HttpServer();
+    //   server.registerPathHandler("/calendar/xpcshell/1b05e158-631a-445f-8c5a-5743b5a05169.ics", createResourceHandler); ----
+    //   server.registerPathHandler("/calendar/", calendarHandler);
+    //   server.registerPathHandler("/calendar/xpcshell/", initPropfindHandler);   --------------------------------------------
+    //   server.registerPathHandler("/users/xpcshell/",principalHandler);
+    //   server.start(serverProperties.port);
+    //   do_register_cleanup(() => server.stop(() => {}));
+    //   cal.getCalendarManager().startup({onResult: function() {
+    //     run_next_test();
+    //   }});
 }

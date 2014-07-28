@@ -20,7 +20,7 @@ function fakeServer() {
     this.httpServer = new HttpServer();
     this.httpServer.start(50002);
     this.localPort = this.httpServer.identity.primaryPort;
-    this.httpServer.registerPathHandler('/', this.prefixHandler);
+    this.httpServer.registerPrefixHandler('/', this.prefixHandler);
     //handlers
 //     this.httpServer.registerPathHandler("/calendar/xpcshell/1b05e158-631a-445f-8c5a-5743b5a05169.ics", createResourceHandler);
 
@@ -40,25 +40,28 @@ fakeServer.prototype = {
     },
     
     prefixHandler: function main_PrefixHandler(request, response) {
-        dump("\n### prefixHandler");
-        let is = request.bodyInputStream;
-        let body = NetUtil.readInputStreamToString(is, is.available(), {
-            charset: 'UTF-8'
-        });
+        fakeServer.prototype.test();
+        response.processAsync();
+        dump("\n### prefixHandler"+ (request.path)+" $$ "+sogoObj._propertyBag.scheduleInboxURL);  
+        dump("\n### prefixHandler"+ (request.path == sogoObj._propertyBag.scheduleInboxURL));       
         try {
-            if(request.path == this._propertyBag.scheduleInboxURL){
+            if(request.path == sogoObj._propertyBag.scheduleInboxURL){
                 //PUT requests to /event.ics and PROPFIND,REPORT to / come here ---------------------------------
-                this.initPropfindHandler(this,body,request,response);
+                dump("##came");
+                fakeServer.prototype.test();
+                fakeServer.prototype.initPropfind(request,response);
             }
-            else if (request.path == this._propertyBag.calendarHomeSetset){
-                this.calendarHandler(this,body,request,response);
+            else if (request.path == sogoObj._propertyBag.calendarHomeSetset){
+                fakeServer.prototype.calendarHandler(request,response);
             }
-            else if(request.path == this._propertyBag.userPrincipalHref){
-                let responseText = this.principalHandler(this,body,request,response);
+            else if(request.path == sogoObj._propertyBag.userPrincipalHref){
+                let responseText = this.principalHandler(request,response);
             }
             else {
                 dump("###Recieved unidentified request : "+request.path+"\n"+body);
                 response.setStatusLine(request.httpVersion, 400, 'Bad Request');
+                response.write("<h1>"+request.path+"</h1>");
+                response.finish()
             }
 
         } catch (e) {
@@ -66,8 +69,14 @@ fakeServer.prototype = {
         }
      },
         
-    initPropfind: function initPropfind(x,body,request,response) {
+    initPropfind: function initPropfind(request,response) {
         //resolve the scope problem
+        let is = request.bodyInputStream;
+        let body = NetUtil.readInputStreamToString(is, is.available(), {
+            charset: 'UTF-8'
+        });
+        
+        dump('initPropfind '+request.method+" : "+body);
         try {
             if (request.method == 'PROPFIND' && body.indexOf('current-user-prin') > -1){
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
@@ -92,6 +101,7 @@ fakeServer.prototype = {
             else {
                 dump('### GOT INVALID METHOD ' + request.method + '\n');
                 response.setStatusLine(request.httpVersion, 400, 'Bad Request');
+                response.finish();
             }
         }
         catch (e) {
@@ -104,10 +114,8 @@ fakeServer.prototype = {
         return response;
     },
     
-    
     test: function test(){
-       let a = this.initPropfind('a','b');
-       dump("\n\n###"+a);
+       dump("\n\n###");
     }
 
 };
@@ -117,8 +125,8 @@ function sogo() {
         name: 'sogo',
         id: 'calendar1',
         calendarHomeSetset: '/calendar/',
-        scheduleInboxURL: '/calendar/xpcshell',
-        scheduleOutboxURL: '/calendar/xpcshell',
+        scheduleInboxURL: '/calendar/xpcshell/',
+        scheduleOutboxURL: '/calendar/xpcshell/',
         userPrincipalHref: '/users/xpcshell/',
         ctag: '123456',
         supportedComps: ['VEVENT',
@@ -131,7 +139,7 @@ function sogo() {
                         ],
     },
 
-    this._responseTemplates = {
+    this._responseTemplates = {       
         _initPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
             '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:b="http://calendarserver.org/ns/" xmlns:D="DAV:">\n' +
             '   <D:response>\n' +
@@ -162,7 +170,7 @@ function sogo() {
         _calDataPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
             '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n' +
             '     <D:response>\n' +
-            '       <D:href>' + this._propertyBag.scheduleInboxURL+{itemId} + '.ics</D:href>\n' +
+            '       <D:href>' + this._propertyBag.scheduleInboxURL+'{itemId}' + '.ics</D:href>\n' +
             '         <D:propstat>\n' +
             '           <D:prop>\n' +
             '             <D:getetag>"' /*get the etag from server calendar*/ + '"</D:getetag>\n' +
@@ -173,8 +181,8 @@ function sogo() {
             '           <D:status>HTTP/1.1 200 OK</D:status>\n' +
             '         </D:propstat>\n' +
             '     </D:response>\n' +
-            '   </D:multistatus>\n',
-        
+            '   </D:multistatus>\n'  
+}
 }
 
 sogo.prototype = new fakeServer();
@@ -182,21 +190,93 @@ sogo.prototype = new fakeServer();
 var sogoObj = new sogo();
 sogoObj.id = "Sogo1";
 
+
+
+
+
+
+
+
 function run_test() {
+    
     sogoObj.init(sogoObj._propertyBag.scheduleInboxURL);
     dump("### Server "+sogoObj.id+" started on "+sogoObj.getLocalPort());
-    do_test_pending();
-    // do_get_profile();
-    // registerFakeUMimTyp();
-    //   //start server
-    //   var server = new HttpServer();
-    //   server.registerPathHandler("/calendar/xpcshell/1b05e158-631a-445f-8c5a-5743b5a05169.ics", createResourceHandler); ----
-    //   server.registerPathHandler("/calendar/", calendarHandler);
-    //   server.registerPathHandler("/calendar/xpcshell/", initPropfindHandler);   --------------------------------------------
-    //   server.registerPathHandler("/users/xpcshell/",principalHandler);
-    //   server.start(serverProperties.port);
-    //   do_register_cleanup(() => server.stop(() => {}));
-    //   cal.getCalendarManager().startup({onResult: function() {
-    //     run_next_test();
-    //   }});
+    
+    //create client calendar
+    do_get_profile();
+    registerFakeUMimTyp();
+    
+    do_register_cleanup(() => sogoObj.httpServer.stop(() => {}));
+    cal.getCalendarManager().startup({onResult: function() {
+        run_next_test();
+    }});
 }
+
+var client = {
+    icalString :    'BEGIN:VEVENT\n' +
+                    'DTSTART:20140725T230000\n' +
+                    'DTEND:20140726T000000\n' +
+                    'LOCATION:Paris\n'+
+                    'TRANSP:OPAQUE\n'+
+                    'ORGANIZER;CN=Organizer Name;SENT-BY="mailto:malinthak2@gmail.com":mailto:malinthak2@gmail.com\n'+
+                    'ATTENDEE;CN=Attendee1 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:mozilla@kewis.ch\n'+
+                    'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee@example.com\n'+
+                    'END:VEVENT\n',
+    itemID : "1b05e158-631a-445f-8c5a-5743b5a05169",
+    //schedule-tag and etag of organizer's object resource
+    getetag : 2314233447,
+    scheduletag : 12345
+};
+
+add_task(test_doFakeServer);
+
+
+function test_doFakeServer(){
+    
+  let icalString = client.icalString;
+  var item = createEventFromIcalString(icalString);
+  item.id = client.itemID;
+  let calmgr = cal.getCalendarManager();
+  let calendarURL = 'http://localhost:'+sogoObj.getLocalPort()+sogoObj._propertyBag.scheduleInboxURL;
+  dump(calendarURL);
+  let calendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
+  calendar.name="testCalendar";
+  calmgr.registerCalendar(calendar);
+  dump('registerCalendar');
+  yield waitForInit(calendar);
+  dump('waitForInit');
+}
+
+
+ function registerFakeUMimTyp() {
+  try {
+    Services.dirsvc.get("UMimTyp", Components.interfaces.nsIFile);
+  } catch (e) {
+    Services.dirsvc.registerProvider({
+      getFile: function(prop, persist) {
+        if (prop == "UMimTyp") {
+          var mimeTypes = Services.dirsvc.get("ProfD", Ci.nsIFile);
+          mimeTypes.append("mimeTypes.rdf");
+          return mimeTypes;
+        }
+        throw Components.results.NS_ERROR_FAILURE;
+      }
+    });
+  }
+}
+
+function waitForInit(calendar) {
+    let deferred = Promise.defer();
+    let caldavCheckSeverInfo = calendar.wrappedJSObject.completeCheckServerInfo;
+    let wrapper = function(listener, error) {
+        if (Components.isSuccessCode(error)) {
+            deferred.resolve();
+        } else {
+            deferred.reject();
+        }
+        calendar.wrappedJSObject.completeCheckServerInfo = caldavCheckServerInfo;
+        caldavCheckServerInfo(listener, error);
+    };
+    calendar.wrappedJSObject.completeCheckServerInfo = wrapper;
+    return deferred.promise;
+} 

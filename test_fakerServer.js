@@ -29,10 +29,11 @@ function fakeServer() {
 fakeServer.prototype = {
     
     init: function init_storage_calendar(scheduleInboxURL) {
+        dump("****typeof "+ this._proto_);
         this.serverCalmgr = cal.getCalendarManager();
         this.calUrl = "http://localhost"+this.localPort+scheduleInboxURL;
         this.storage = this.serverCalmgr.createCalendar("memory", Services.io.newURI(this.calUrl, null, null));
-        
+        this.storage.name = "serverStorageCalendar";
     },
 
     getLocalPort: function get_LocalPort() {
@@ -40,13 +41,11 @@ fakeServer.prototype = {
     },
     
     prefixHandler: function main_PrefixHandler(request, response) {
-        fakeServer.prototype.test();
         response.processAsync();
-        dump("\n### prefixHandler"+ (request.path)+" $$ "+sogoObj._propertyBag.scheduleInboxURL);  
-        dump("\n### prefixHandler"+ (request.path == sogoObj._propertyBag.scheduleInboxURL));       
+        //dump("\n### prefixHandler"+ request.path.matches(sogoObj._propertyBag.scheduleInboxURL+'.*'));       
         try {
             if(request.path == sogoObj._propertyBag.scheduleInboxURL){
-                //PUT requests to /event.ics and PROPFIND,REPORT to / come here --------------------------------- /calendar/xpcshell/
+                //PROPFIND,REPORT to / come here --------------------------------- /calendar/xpcshell/
                 fakeServer.prototype.initPropfind(request,response);
             }
             else if (request.path == sogoObj._propertyBag.calendarHomeSetset){
@@ -58,10 +57,20 @@ fakeServer.prototype = {
                 fakeServer.prototype.principalHandler(request,response);
             }
             else {
-                dump("###Recieved unidentified request : "+request.path+"\n"+body);
+                //PUT requests to /event.ics
+                if(request.method=='PUT'){
+                    dump("###PUT\n");
+                    fakeServer.prototype.putHandler(request,response);
+                }
+                else if(request.method == 'GET'){
+                    dump('##GET\n');
+                }
+                else {
+                dump("###Recieved unidentified request : "+request.path+"\n");
                 response.setStatusLine(request.httpVersion, 400, 'Bad Request');
                 response.write("<h1>"+request.path+"</h1>");
                 response.finish()
+                }
             }
 
         } catch (e) {
@@ -95,10 +104,6 @@ fakeServer.prototype = {
                 response.setHeader('content-type', 'text/xml');
                 response.write(sogoObj._responseTemplates.reportPropfind);
                 response.finish();
-            }
-            else if (request.method == 'PUT') {
-                sogoObj.storage.addItem();
-
             }
             else {
                 dump('### GOT INVALID METHOD ' + request.method + '\n');
@@ -142,7 +147,23 @@ fakeServer.prototype = {
             response.setStatusLine(request.httpVersion, 400, "Bad Request");
         }
     },
-
+    
+    putHandler: function(request,response){
+        let is = request.bodyInputStream;
+        let body = NetUtil.readInputStreamToString(is, is.available(), {
+            charset: 'UTF-8'
+        });
+        //         dump("###PUT Handler\n"+body);
+        let tempServerItem = createEventFromIcalString(body);
+        sogoObj.storage.addItem(tempServerItem, {
+            onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
+                dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
+            }
+        });
+        response.setStatusLine(request.httpVersion, 201, "resource created");
+        response.finish();
+    },
+    
     test: function test(){
        dump("\n\n###");
     }
@@ -165,7 +186,8 @@ function sogo() {
                         ]
     },
 
-    this._responseTemplates = {       
+    this._responseTemplates = {
+                         
         _initPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
             '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:b="http://calendarserver.org/ns/" xmlns:D="DAV:">\n' +
             '   <D:response>\n' +
@@ -284,18 +306,19 @@ add_task(test_doFakeServer);
 
 function test_doFakeServer(){
 
-    let icalString = client.icalString;
-    var item = createEventFromIcalString(icalString);
-    item.id = client.itemID;
     let calmgr = cal.getCalendarManager();
     let calendarURL = 'http://localhost:'+sogoObj.getLocalPort()+sogoObj._propertyBag.scheduleInboxURL;
-    dump(calendarURL);
-    let calendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
-    calendar.name="testCalendar";
-    calmgr.registerCalendar(calendar);
+    dump('###'+calendarURL);
+    let clientCalendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
+    clientCalendar.name="clientCalendar";
+    calmgr.registerCalendar(clientCalendar);
     dump('registerCalendar');
-    yield waitForInit(calendar);
+    yield waitForInit(clientCalendar);
     dump('waitForInit');
+    var item = createEventFromIcalString(client.icalString);
+    item.id = client.id;
+    yield promiseAddItem(item,clientCalendar);
+    dump('promiseAddItem');
 }
 
 
@@ -331,3 +354,14 @@ function waitForInit(calendar) {
     calendar.wrappedJSObject.completeCheckServerInfo = wrapper;
     return deferred.promise;
 } 
+
+function promiseAddItem(item, calendar) {
+    let deferred = Promise.defer();
+    calendar.addItem(item, {
+        onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
+            dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
+            deferred.resolve(aStatus);
+        }
+    });
+    return deferred.promise;
+}

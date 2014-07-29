@@ -21,15 +21,14 @@ function fakeServer() {
     this.httpServer.start(50002);
     this.localPort = this.httpServer.identity.primaryPort;
     this.httpServer.registerPrefixHandler('/', this.prefixHandler);
-    //handlers
-//     this.httpServer.registerPathHandler("/calendar/xpcshell/1b05e158-631a-445f-8c5a-5743b5a05169.ics", createResourceHandler);
+    this.putItemCounter = 0;
+    this.storage = null;
 
 }
 
 fakeServer.prototype = {
     
     init: function init_storage_calendar(scheduleInboxURL) {
-        dump("****typeof "+ this._proto_);
         this.serverCalmgr = cal.getCalendarManager();
         this.calUrl = "http://localhost"+this.localPort+scheduleInboxURL;
         this.storage = this.serverCalmgr.createCalendar("memory", Services.io.newURI(this.calUrl, null, null));
@@ -102,7 +101,7 @@ fakeServer.prototype = {
             else if (request.method == 'REPORT') {
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
-                response.write(sogoObj._responseTemplates.reportPropfind);
+                response.write(sogoObj._responseTemplates._reportPropfind);
                 response.finish();
             }
             else {
@@ -149,21 +148,50 @@ fakeServer.prototype = {
     },
     
     putHandler: function(request,response){
+        this.putItemCounter++;
+        dump('\n###counter'+putItemCounter);
         let is = request.bodyInputStream;
         let body = NetUtil.readInputStreamToString(is, is.available(), {
             charset: 'UTF-8'
         });
-        //         dump("###PUT Handler\n"+body);
+        dump("###PUT generateTag\n"+fakeServer.prototype.generateTag());
         let tempServerItem = createEventFromIcalString(body);
         sogoObj.storage.addItem(tempServerItem, {
             onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
                 dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
             }
         });
+            
+        sogoObj.storage.setMetaData("item_1_etag", fakeServer.prototype.generateTag());
+        sogoObj.storage.setMetaData("item_1_scheduleTag", fakeServer.prototype.generateTag());
+        
+        dump("###etag"+sogoObj.storage.getMetaData("item_1_etag"));
         response.setStatusLine(request.httpVersion, 201, "resource created");
         response.finish();
     },
     
+    getHandler: function(request,response){
+        //get the itemID from request.path
+        let tempGetItem = null;
+        sogoObj.storage.getItem(tempServerItem.id, {
+            onGetResult: function (cal, stat, type, detail, count, items) {
+                tempGetItem = items[0];
+                deferred.resolve();
+            },
+            onOperationComplete: function() {} 
+        });
+        response.setHeader('content-type', 'text/calendar');
+        response.write(tempGetItem.icalString);
+    },
+    
+    generateTag: function generateTag() {
+        let tag = "";
+        let possible = "0123456789";
+        for(let i=0; i < 5; i++ )
+            tag += possible.charAt(Math.floor(Math.random() * possible.length));
+        return tag;    
+    },
+
     test: function test(){
        dump("\n\n###");
     }
@@ -254,7 +282,23 @@ function sogo() {
             '             </D:prop>\n' +
             '          </D:propstat>\n' +
             '       </D:response>\n' +
-            '   </D:multistatus>'
+            '   </D:multistatus>',
+        
+        _reportPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
+            '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
+            '     <D:response>\n'+
+            '       <D:href>'+'request.path+targetUser.itemID'+'.ics</D:href>\n'+
+            '         <D:propstat>\n'+
+            '           <D:prop>\n'+
+            '             <D:getetag>"'+this.storage.getMetaData('item_1_etag')+'"</D:getetag>\n'+
+            '             <C:schedule-tag>"'+this.storage.getMetaData('item_1_scheduleTag')+'"</C:schedule-tag>\n'+
+            '             <C:calendar-data>'+client.icalString+'</C:calendar-data>\n'+
+            '           </D:prop>\n'+
+            '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
+            '         </D:propstat>\n'+
+            '     </D:response>\n'+
+            '   </D:multistatus>\n'
+
 }
 }
 
@@ -290,12 +334,12 @@ var client = {
                     'DTSTART:20140725T230000\n' +
                     'DTEND:20140726T000000\n' +
                     'LOCATION:Paris\n'+
+                    'UID: 1b05e158-631a-445f-8c5a-5743b5a05169'+
                     'TRANSP:OPAQUE\n'+
                     'ORGANIZER;CN=Organizer Name;SENT-BY="mailto:malinthak2@gmail.com":mailto:malinthak2@gmail.com\n'+
                     'ATTENDEE;CN=Attendee1 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:mozilla@kewis.ch\n'+
                     'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee@example.com\n'+
                     'END:VEVENT\n',
-    itemID : "1b05e158-631a-445f-8c5a-5743b5a05169",
     //schedule-tag and etag of organizer's object resource
     getetag : 2314233447,
     scheduletag : 12345
@@ -316,7 +360,6 @@ function test_doFakeServer(){
     yield waitForInit(clientCalendar);
     dump('waitForInit');
     var item = createEventFromIcalString(client.icalString);
-    item.id = client.id;
     yield promiseAddItem(item,clientCalendar);
     dump('promiseAddItem');
 }
@@ -363,5 +406,4 @@ function promiseAddItem(item, calendar) {
             deferred.resolve(aStatus);
         }
     });
-    return deferred.promise;
 }

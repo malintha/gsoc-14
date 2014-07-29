@@ -54,8 +54,8 @@ fakeServer.prototype = {
                 fakeServer.prototype.calendarHandler(request,response);
             }
             else if(request.path == sogoObj._propertyBag.userPrincipalHref){
-                //OPTIONS should come here----------------------------------------------------------------------- working here
-                let responseText = this.principalHandler(request,response);
+                //OPTIONS should come here----------------------------------------------------------------------- /users/xpcshell/
+                fakeServer.prototype.principalHandler(request,response);
             }
             else {
                 dump("###Recieved unidentified request : "+request.path+"\n"+body);
@@ -88,11 +88,13 @@ fakeServer.prototype = {
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
                 response.write(sogoObj._responseTemplates._calDataPropfind);
+                response.finish();
             }
             else if (request.method == 'REPORT') {
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
                 response.write(sogoObj._responseTemplates.reportPropfind);
+                response.finish();
             }
             else if (request.method == 'PUT') {
                 sogoObj.storage.addItem();
@@ -129,10 +131,21 @@ fakeServer.prototype = {
 
     },
     
+    principalHandler: function principalHandler(request,response) {
+        if (request.method == "PROPFIND") {
+            response.setStatusLine(request.httpVersion, 207, "Multi-Status");
+            response.setHeader('content-type', 'text/xml');
+            response.write(sogoObj._responseTemplates._principalPropfind);
+            response.finish();
+        } else {
+            dump("### PRINCIPAL HANDLER GOT INVALID METHOD " + request.method + "\n");
+            response.setStatusLine(request.httpVersion, 400, "Bad Request");
+        }
+    },
+
     test: function test(){
        dump("\n\n###");
     }
-
 };
 
 function sogo() {
@@ -149,9 +162,7 @@ function sogo() {
                         ],
         userAddressSet: ['user0@example.com',
                          'user1@example.com',
-                         'user2@example.com',
-                         'user3@example.com'
-                        ],
+                        ]
     },
 
     this._responseTemplates = {       
@@ -196,7 +207,32 @@ function sogo() {
             '           <D:status>HTTP/1.1 200 OK</D:status>\n' +
             '         </D:propstat>\n' +
             '     </D:response>\n' +
-            '   </D:multistatus>\n'  
+            '   </D:multistatus>\n',
+        
+        _principalPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
+            '   <D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
+            '       <D:response>\n' +
+            '          <D:href>/calendar/xpcshell/</D:href>\n' +
+            '          <D:propstat>\n' +
+            '             <D:status>HTTP/1.1 200 OK</D:status>\n' +
+            '             <D:prop>\n' +
+            '             <a:calendar-home-set>\n' +
+            '                <D:href xmlns:D="DAV:">/calendar/</D:href>\n' +
+            '             </a:calendar-home-set>\n' +
+            '             <a:schedule-inbox-URL>\n' +
+            '                <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
+            '             </a:schedule-inbox-URL>\n' +
+            '             <a:schedule-outbox-URL>\n' +
+            '                <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
+            '             </a:schedule-outbox-URL>\n' +
+            '             <a:calendar-user-address-set>\n'+
+            '                <D:href xmlns:D="DAV:">mailto:'+this._propertyBag.userAddressSet[0]+'</D:href>\n'+
+            '                <D:href xmlns:D="DAV:">mailto:'+this._propertyBag.userAddressSet[1]+'</D:href>\n'+
+            '             </a:calendar-user-address-set>\n' +
+            '             </D:prop>\n' +
+            '          </D:propstat>\n' +
+            '       </D:response>\n' +
+            '   </D:multistatus>'
 }
 }
 

@@ -19,20 +19,21 @@ function fakeServer() {
     this._responseTemplates = null;
     this.httpServer = new HttpServer();
     this.httpServer.start(50002);
+    
     this.localPort = this.httpServer.identity.primaryPort;
     this.httpServer.registerPrefixHandler('/', annonymous);
-    this.putItemCounter = 0;
+    
+    this.serverCalmgr = cal.getCalendarManager();
+    this.calUrl = "http://localhost"+this.localPort+'/calendar/xpcshell/';
+    this.storage = this.serverCalmgr.createCalendar("memory", Services.io.newURI(this.calUrl, null, null));
+    this.storage.name = "serverStorageCalendar";
 }
 
 
 fakeServer.prototype = {
-    
-    init: function init_storage_calendar(scheduleInboxURL) {
-        this.serverCalmgr = cal.getCalendarManager();
-        this.calUrl = "http://localhost"+this.localPort+scheduleInboxURL;
-        this.storage = this.serverCalmgr.createCalendar("memory", Services.io.newURI(this.calUrl, null, null));
-        this.storage.name = "serverStorageCalendar";
-        fakeServer.storage = this.storage;
+
+    init: function init_storage_calendar() {
+
     },
 
     getLocalPort: function get_LocalPort() {
@@ -44,32 +45,31 @@ fakeServer.prototype = {
         dump('#####test '+this._propertyBag.scheduleInboxURL);
         //dump("\n### prefixHandler"+ request.path.matches(sogoObj._propertyBag.scheduleInboxURL+'.*'));       
         try {
-            if(request.path == sogoObj._propertyBag.scheduleInboxURL){
+            if(request.path == this._propertyBag.scheduleInboxURL){
                 //PROPFIND,REPORT to / come here --------------------------------- /calendar/xpcshell/
-                fakeServer.prototype.initPropfind(request,response);
+                fakeServer.prototype.initPropfind(this,request,response);
             }
-            else if (request.path == sogoObj._propertyBag.calendarHomeSetset){
+            else if (request.path == this._propertyBag.calendarHomeSetset){
                 //OPTIONS should come here-----------------------------------------/calendar/
-                fakeServer.prototype.calendarHandler(request,response);
+                fakeServer.prototype.calendarHandler(this,request,response);
             }
-            else if(request.path == sogoObj._propertyBag.userPrincipalHref){
+            else if(request.path == this._propertyBag.userPrincipalHref){
                 //OPTIONS should come here-----------------------------------------/users/xpcshell/
-                fakeServer.prototype.principalHandler(request,response);
+                fakeServer.prototype.principalHandler(this,request,response);
             }
             else {
                 //PUT requests to /event.ics
                 if(request.method=='PUT'){
                     dump("###PUT\n");
-                    fakeServer.prototype.putHandler(request,response);
+                    fakeServer.prototype.putHandler(this,request,response);
                 }
                 else if(request.method == 'GET'){
                     dump('##GET\n');
-                    fakeServer.prototype.getHandler(request,response)
+                    fakeServer.prototype.getHandler(this,request,response)
                 }
                 else {
                 dump("###Recieved unidentified request : "+request.path+"\n");
                 response.setStatusLine(request.httpVersion, 400, 'Bad Request');
-                response.write("<h1>"+request.path+"</h1>");
                 response.finish()
                 }
             }
@@ -79,31 +79,31 @@ fakeServer.prototype = {
         }
      },
         
-    initPropfind: function initPropfind(request,response) {
-        //resolve the scope problem
+    initPropfind: function initPropfind(scope, request,response) {
         let is = request.bodyInputStream;
         let body = NetUtil.readInputStreamToString(is, is.available(), {
             charset: 'UTF-8'
         });
         
         dump('initPropfind '+request.method+" : "+body);
+        dump('\n\n## '+scope._propertyBag.name);
         try {
             if (request.method == 'PROPFIND' && body.indexOf('current-user-prin') > -1){
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
-                response.write(sogoObj._responseTemplates._initPropfind);
+                response.write(scope._responseTemplates._initPropfind);
                 response.finish();
             }
             else if (request.method == 'PROPFIND' && body.indexOf('getetag') > -1) {
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
-                response.write(sogoObj._responseTemplates._calDataPropfind);
+                response.write(scope._responseTemplates._calDataPropfind);
                 response.finish();
             }
             else if (request.method == 'REPORT') {
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
-                response.write(sogoObj._responseTemplates._reportPropfind);
+                response.write(scope._responseTemplates._reportPropfind);
                 response.finish();
             }
             else {
@@ -117,7 +117,7 @@ fakeServer.prototype = {
         }
     },
     
-    calendarHandler: function calendarHandler(request,response) {
+    calendarHandler: function calendarHandler(scope,request,response) {
         //resolve the scope problem
         dump("####OPTIONS "+request.method);
         try {
@@ -137,11 +137,11 @@ fakeServer.prototype = {
 
     },
     
-    principalHandler: function principalHandler(request,response) {
+    principalHandler: function principalHandler(scope,request,response) {
         if (request.method == "PROPFIND") {
             response.setStatusLine(request.httpVersion, 207, "Multi-Status");
             response.setHeader('content-type', 'text/xml');
-            response.write(sogoObj._responseTemplates._principalPropfind);
+            response.write(scope._responseTemplates._principalPropfind);
             response.finish();
         } else {
             dump("### PRINCIPAL HANDLER GOT INVALID METHOD " + request.method + "\n");
@@ -149,7 +149,7 @@ fakeServer.prototype = {
         }
     },
 
-    putHandler: function(request,response){
+    putHandler: function(scope,request,response){
         let matchheader;
         let is = request.bodyInputStream;
         let body = NetUtil.readInputStreamToString(is, is.available(), {
@@ -169,28 +169,33 @@ fakeServer.prototype = {
         if(request.method=="PUT" && matchheader=="*" && body){
 
             let tempServerItem = createEventFromIcalString(body);
-            sogoObj.storage.addItem(tempServerItem, {
+            scope.storage.addItem(tempServerItem, {
                 onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
                     dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
                 }
             });
             //put etag & scheduleTag vs item.id in meta data as key,value pair
-            let tempEtag = fakeServer.prototype.generateETag();
+            let tempEtag = scope.generateETag();
             let tempscheduleTag = fakeServer.prototype.generateScheduleTag();
+            //setting meta data for the event
+            scope.storage.setMetaData(tempServerItem.id,tempEtag);
+            scope.storage.setMetaData('sTag'+tempServerItem.id,tempscheduleTag);
+            scope.storage.setMetaData(tempEtag,tempServerItem.id);
+            scope.storage.setMetaData(tempscheduleTag,tempServerItem.id);
             
-            sogoObj.storage.setMetaData(tempEtag, tempServerItem.id);
-            sogoObj.storage.setMetaData(tempscheduleTag, tempServerItem.id);
-            dump("###etag"+sogoObj.storage.getMetaData(tempEtag));
+            dump("###Id to Etag: "+scope.storage.getMetaData(tempEtag));
             response.setStatusLine(request.httpVersion, 201, "resource created");
             response.finish();
         }
         //modify request
         else if(request.method=='PUT' && matchheader>0 && body){
-            dump('##modifyRequeest');     
-            let changeItemId = sogoObj.storage.getMetaData(matchheader);
-            let oldItem = null;
+            dump('##modifyRequeest');    
+            //get the corresponding ItemId to recieved header
+            let changeItemId = scope.storage.getMetaData(matchheader);
             let newItem = createEventFromIcalString(body);
-            sogoObj.storage.getItem(getItemId, {
+            let oldItem = null;
+            
+            scope.storage.getItem(changeItemId, {
                 onGetResult: function (cal, stat, type, detail, count, items) {
                     oldItem = items[0];
                 },
@@ -199,6 +204,8 @@ fakeServer.prototype = {
 
             calendar.modifyItem(newItem,oldItem,{
                 onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
+                    //change etag and schedule tag. Assume it is a major change by organizer to change the scheduleTag 
+                    scope.storage.setMetaData('eTag'+changeItemId,++tempEtag);
                     dump("\nItem successfully modified on calendar "+aCalendar.name);
                     response.setStatusLine(request.httpVersion, 200, "resource changed");
                     response.finish();
@@ -207,18 +214,32 @@ fakeServer.prototype = {
         }
     },
     
-    getHandler: function(request,response){
+    getHandler: function(scope,request,response){
         //get the itemID from request.path
         let tempGetItem = null;
-        sogoObj.storage.getItem(tempServerItem.id, {
+        scope.storage.getItem(tempServerItem.id, {
             onGetResult: function (cal, stat, type, detail, count, items) {
                 tempGetItem = items[0];
-                deferred.resolve();
             },
             onOperationComplete: function() {} 
         });
         response.setHeader('content-type', 'text/calendar');
         response.write(tempGetItem.icalString);
+    },
+
+    getItemString: function(itemId,calendar) {
+        //get a icalString for given Item Id
+        dump('***getItemString');
+        let tempGetItemString = null;
+        calendar.getItem(itemId, {
+            onGetResult: function (cal, stat, type, detail, count, items) {
+                tempGetItemString = items[0].icalString
+            },
+            onOperationComplete: function() {} 
+        });
+        dump('\n\n***tempGetItemString'+tempGetItemString);
+        return tempGetItemString;
+
     },
     
     generateETag: function generateETag() {
@@ -255,8 +276,19 @@ function sogo() {
                          'VTODO'
                         ],
         userAddressSet: ['user0@example.com',
-                         'user1@example.com',
-                        ]
+                         'user1@example.com'
+                        ],
+        icalString :    'BEGIN:VEVENT\n' +
+                        'DTSTART:20140725T230000\n' +
+                        'DTEND:20140726T000000\n' +
+                        'LOCATION:Paris\n'+
+                        'UID: 1b05e158-631a-445f-8c5a-5743b5a05169\n'+
+                        'TRANSP:OPAQUE\n'+
+                        'ORGANIZER;CN=Organizer Name;SENT-BY="mailto:organizer@example.com":mailto:organizer@gmail.com\n'+
+                        'ATTENDEE;CN=Attendee1 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee1@example.com\n'+
+                        'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee2@example.com\n'+
+                        'END:VEVENT\n',
+        itemId     :    '1b05e158-631a-445f-8c5a-5743b5a05169'                
     };
 
     this._responseTemplates = {
@@ -291,13 +323,12 @@ function sogo() {
         _calDataPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
             '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n' +
             '     <D:response>\n' +
-            '       <D:href>' + this._propertyBag.scheduleInboxURL+'{itemId}' + '.ics</D:href>\n' +
+            '       <D:href>'+this._propertyBag.scheduleInboxURL+this._propertyBag.itemId+'.ics</D:href>\n'+
             '         <D:propstat>\n' +
             '           <D:prop>\n' +
-            '             <D:getetag>"' /*get the etag from server calendar*/ + '"</D:getetag>\n' +
-         // '             <C:schedule-tag>"'+scheduleTagGenerator("new")+'"</C:schedule-tag>\n'+
-            //get the item from the calendar and append the icalString
-            '             <C:calendar-data>'/* + item */+ '</C:calendar-data>\n' +
+            '             <D:getetag>"'+this.storage.getMetaData(this._propertyBag.itemId)+'"</D:getetag>\n'+
+            '             <C:schedule-tag>"'+this.storage.getMetaData('sTag'+this._propertyBag.itemId)+'"</C:schedule-tag>\n'+
+            '             <C:calendar-data>'+this.getItemString(this._propertyBag.itemId,this.storage)+'</C:calendar-data>\n'+
             '           </D:prop>\n' +
             '           <D:status>HTTP/1.1 200 OK</D:status>\n' +
             '         </D:propstat>\n' +
@@ -312,13 +343,13 @@ function sogo() {
             '             <D:status>HTTP/1.1 200 OK</D:status>\n' +
             '             <D:prop>\n' +
             '             <a:calendar-home-set>\n' +
-            '                <D:href xmlns:D="DAV:">/calendar/</D:href>\n' +
+            '                <D:href xmlns:D="DAV:">'+this._propertyBag.calendarHomeSetset+'</D:href>\n' +
             '             </a:calendar-home-set>\n' +
             '             <a:schedule-inbox-URL>\n' +
-            '                <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
+            '                <D:href xmlns:D="DAV:">'+this._propertyBag.scheduleOutboxURL+'</D:href>\n' +
             '             </a:schedule-inbox-URL>\n' +
             '             <a:schedule-outbox-URL>\n' +
-            '                <D:href xmlns:D="DAV:">/calendar/xpcshell</D:href>\n' +
+            '                <D:href xmlns:D="DAV:">'+this._propertyBag.scheduleOutboxURL+'</D:href>\n' +
             '             </a:schedule-outbox-URL>\n' +
             '             <a:calendar-user-address-set>\n'+
             '                <D:href xmlns:D="DAV:">mailto:'+this._propertyBag.userAddressSet[0]+'</D:href>\n'+
@@ -332,12 +363,12 @@ function sogo() {
         _reportPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
             '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
             '     <D:response>\n'+
-//            '       <D:href>'+'request.path+targetUser.itemID'+'.ics</D:href>\n'+
+            '       <D:href>'+this._propertyBag.scheduleInboxURL+this._propertyBag.itemId+'.ics</D:href>\n'+
             '         <D:propstat>\n'+
             '           <D:prop>\n'+
-//            '             <D:getetag>"'+this.storage.name+'"</D:getetag>\n'+
-//            '             <C:schedule-tag>"'+'this.storage.name'+'"</C:schedule-tag>\n'+
-//            '             <C:calendar-data>'+'client.icalString'+'</C:calendar-data>\n'+
+            '             <D:getetag>"'+this.storage.getMetaData(this._propertyBag.itemId)+'"</D:getetag>\n'+
+            '             <C:schedule-tag>"'+this.storage.getMetaData('sTag'+this._propertyBag.itemId)+'"</C:schedule-tag>\n'+
+            '             <C:calendar-data>'+this._propertyBag.icalString+'</C:calendar-data>\n'+
             '           </D:prop>\n'+
             '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
             '         </D:propstat>\n'+
@@ -353,13 +384,12 @@ var sogoObj = new sogo();
 sogoObj.id = "Sogo1";
 
 function annonymous(request,response){
-    dump('\n####test'+request.path);
+    dump('\n####annonymous'+request.path);
    sogoObj.prefixHandler(request,response);
 }
 
 function run_test() {
-    
-    sogoObj.init(sogoObj._propertyBag.scheduleInboxURL);
+   
     dump("### Server "+sogoObj.id+" started on "+sogoObj.getLocalPort());
     
     //create client calendar
@@ -383,7 +413,7 @@ var client = {
                     'ATTENDEE;CN=Attendee1 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee1@example.com\n'+
                     'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee2@example.com\n'+
                     'END:VEVENT\n',
-    //schedule-tag and etag of organizer's object resource
+    itemId     :    '1b05e158-631a-445f-8c5a-5743b5a05169'
 };
 
 add_task(test_doFakeServer);
@@ -399,7 +429,7 @@ function test_doFakeServer(){
     dump('registerCalendar');
     yield waitForInit(clientCalendar);
     dump('waitForInit');
-    var item = createEventFromIcalString(client.icalString);
+    var item = createEventFromIcalString(sogoObj._propertyBag.icalString);
     yield promiseAddItem(item,clientCalendar);
     dump('promiseAddItem');
 }

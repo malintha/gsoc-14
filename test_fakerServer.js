@@ -22,7 +22,9 @@ function fakeServer() {
     this.localPort = this.httpServer.identity.primaryPort;
     this.httpServer.registerPrefixHandler('/', this.prefixHandler);
     this.putItemCounter = 0;
-    this.storage = null;
+    this.storage = {
+        name : 'kkk'
+    };
 
 }
 
@@ -33,6 +35,7 @@ fakeServer.prototype = {
         this.calUrl = "http://localhost"+this.localPort+scheduleInboxURL;
         this.storage = this.serverCalmgr.createCalendar("memory", Services.io.newURI(this.calUrl, null, null));
         this.storage.name = "serverStorageCalendar";
+        fakeServer.storage = this.storage;
     },
 
     getLocalPort: function get_LocalPort() {
@@ -146,28 +149,46 @@ fakeServer.prototype = {
             response.setStatusLine(request.httpVersion, 400, "Bad Request");
         }
     },
-    
+
     putHandler: function(request,response){
-        this.putItemCounter++;
-        dump('\n###counter'+putItemCounter);
+        let matchheader;
         let is = request.bodyInputStream;
         let body = NetUtil.readInputStreamToString(is, is.available(), {
             charset: 'UTF-8'
         });
-        dump("###PUT generateTag\n"+fakeServer.prototype.generateTag());
-        let tempServerItem = createEventFromIcalString(body);
-        sogoObj.storage.addItem(tempServerItem, {
-            onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
-                dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
-            }
-        });
+          dump('PUT BODY'+body);
+        //PUT request
+        if(request.hasHeader("If-None-Match")){
+            matchheader = request.getHeader("If-None-Match");
+        }
+        //Modify PUT request
+        else if(request.hasHeader("If-Schedule-Tag-Match")){
+            dump("##If-Schedule-Tag-Match");
+            matchheader = request.getHeader("If-Schedule-Tag-Match");
+        }
+          //create resource in server calendar
+        if(request.method=="PUT" && matchheader=="*" && body){
+
+            let tempServerItem = createEventFromIcalString(body);
+            sogoObj.storage.addItem(tempServerItem, {
+                onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
+                    dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
+                }
+            });
+            //put etag & scheduleTag vs item.id in meta data as key,value pair
+            let tempEtag = fakeServer.prototype.generateETag();
+            let tempscheduleTag = fakeServer.prototype.generateScheduleTag();
             
-        sogoObj.storage.setMetaData("item_1_etag", fakeServer.prototype.generateTag());
-        sogoObj.storage.setMetaData("item_1_scheduleTag", fakeServer.prototype.generateTag());
-        
-        dump("###etag"+sogoObj.storage.getMetaData("item_1_etag"));
-        response.setStatusLine(request.httpVersion, 201, "resource created");
-        response.finish();
+            sogoObj.storage.setMetaData(tempEtag, tempServerItem.id);
+            sogoObj.storage.setMetaData(tempscheduleTag, tempServerItem.id);
+            dump("###etag"+sogoObj.storage.getMetaData(tempEtag));
+            response.setStatusLine(request.httpVersion, 201, "resource created");
+            response.finish();
+        }
+        //modify request
+        else if(request.method=='PUT' && matchheader>0 && body)
+             dump('##modifyRequeest');     
+
     },
     
     getHandler: function(request,response){
@@ -184,14 +205,21 @@ fakeServer.prototype = {
         response.write(tempGetItem.icalString);
     },
     
-    generateTag: function generateTag() {
+    generateETag: function generateETag() {
         let tag = "";
         let possible = "0123456789";
         for(let i=0; i < 5; i++ )
             tag += possible.charAt(Math.floor(Math.random() * possible.length));
         return tag;    
     },
-
+        
+    generateScheduleTag: function generateScheduleTag() {
+        let tag = "";
+        let possible = "abcdefghijklmnopqrstuvwxyz0123456789";
+        for(let i=0; i < 5; i++ )
+            tag += possible.charAt(Math.floor(Math.random() * possible.length));
+        return tag;    
+    },
     test: function test(){
        dump("\n\n###");
     }
@@ -290,9 +318,9 @@ function sogo() {
             '       <D:href>'+'request.path+targetUser.itemID'+'.ics</D:href>\n'+
             '         <D:propstat>\n'+
             '           <D:prop>\n'+
-            '             <D:getetag>"'+this.storage.getMetaData('item_1_etag')+'"</D:getetag>\n'+
-            '             <C:schedule-tag>"'+this.storage.getMetaData('item_1_scheduleTag')+'"</C:schedule-tag>\n'+
-            '             <C:calendar-data>'+client.icalString+'</C:calendar-data>\n'+
+            '             <D:getetag>"'+this.storage.name+'"</D:getetag>\n'+
+            '             <C:schedule-tag>"'+'this.storage.name'+'"</C:schedule-tag>\n'+
+            '             <C:calendar-data>'+'this.client.icalString'+'</C:calendar-data>\n'+
             '           </D:prop>\n'+
             '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
             '         </D:propstat>\n'+
@@ -341,8 +369,6 @@ var client = {
                     'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee@example.com\n'+
                     'END:VEVENT\n',
     //schedule-tag and etag of organizer's object resource
-    getetag : 2314233447,
-    scheduletag : 12345
 };
 
 add_task(test_doFakeServer);

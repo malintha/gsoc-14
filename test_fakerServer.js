@@ -20,13 +20,10 @@ function fakeServer() {
     this.httpServer = new HttpServer();
     this.httpServer.start(50002);
     this.localPort = this.httpServer.identity.primaryPort;
-    this.httpServer.registerPrefixHandler('/', this.prefixHandler);
+    this.httpServer.registerPrefixHandler('/', annonymous);
     this.putItemCounter = 0;
-    this.storage = {
-        name : 'kkk'
-    };
-
 }
+
 
 fakeServer.prototype = {
     
@@ -44,6 +41,7 @@ fakeServer.prototype = {
     
     prefixHandler: function main_PrefixHandler(request, response) {
         response.processAsync();
+        dump('#####test '+this._propertyBag.scheduleInboxURL);
         //dump("\n### prefixHandler"+ request.path.matches(sogoObj._propertyBag.scheduleInboxURL+'.*'));       
         try {
             if(request.path == sogoObj._propertyBag.scheduleInboxURL){
@@ -51,11 +49,11 @@ fakeServer.prototype = {
                 fakeServer.prototype.initPropfind(request,response);
             }
             else if (request.path == sogoObj._propertyBag.calendarHomeSetset){
-                //OPTIONS should come here----------------------------------------------------------------------- /calendar/
+                //OPTIONS should come here-----------------------------------------/calendar/
                 fakeServer.prototype.calendarHandler(request,response);
             }
             else if(request.path == sogoObj._propertyBag.userPrincipalHref){
-                //OPTIONS should come here----------------------------------------------------------------------- /users/xpcshell/
+                //OPTIONS should come here-----------------------------------------/users/xpcshell/
                 fakeServer.prototype.principalHandler(request,response);
             }
             else {
@@ -66,6 +64,7 @@ fakeServer.prototype = {
                 }
                 else if(request.method == 'GET'){
                     dump('##GET\n');
+                    fakeServer.prototype.getHandler(request,response)
                 }
                 else {
                 dump("###Recieved unidentified request : "+request.path+"\n");
@@ -188,7 +187,7 @@ fakeServer.prototype = {
         //modify request
         else if(request.method=='PUT' && matchheader>0 && body){
             dump('##modifyRequeest');     
-            let changeItemId = sogoObj.storage.getMetaData(matchheader));
+            let changeItemId = sogoObj.storage.getMetaData(matchheader);
             let oldItem = null;
             let newItem = createEventFromIcalString(body);
             sogoObj.storage.getItem(getItemId, {
@@ -238,11 +237,12 @@ fakeServer.prototype = {
         return tag;    
     },
     test: function test(){
-       dump("\n\n###");
+       dump("\n\n###TESTSTS###");
     }
 };
 
 function sogo() {
+    this.id = '1';
     this._propertyBag = {
         name: 'sogo',
         id: 'calendar1',
@@ -257,7 +257,7 @@ function sogo() {
         userAddressSet: ['user0@example.com',
                          'user1@example.com',
                         ]
-    },
+    };
 
     this._responseTemplates = {
                          
@@ -332,25 +332,30 @@ function sogo() {
         _reportPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
             '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
             '     <D:response>\n'+
-            '       <D:href>'+'request.path+targetUser.itemID'+'.ics</D:href>\n'+
+//            '       <D:href>'+'request.path+targetUser.itemID'+'.ics</D:href>\n'+
             '         <D:propstat>\n'+
             '           <D:prop>\n'+
-            '             <D:getetag>"'+this.storage.name+'"</D:getetag>\n'+
-            '             <C:schedule-tag>"'+'this.storage.name'+'"</C:schedule-tag>\n'+
-            '             <C:calendar-data>'+'this.client.icalString'+'</C:calendar-data>\n'+
+//            '             <D:getetag>"'+this.storage.name+'"</D:getetag>\n'+
+//            '             <C:schedule-tag>"'+'this.storage.name'+'"</C:schedule-tag>\n'+
+//            '             <C:calendar-data>'+'client.icalString'+'</C:calendar-data>\n'+
             '           </D:prop>\n'+
             '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
             '         </D:propstat>\n'+
             '     </D:response>\n'+
             '   </D:multistatus>\n'
 
-}
+};
 }
 
 sogo.prototype = new fakeServer();
 
 var sogoObj = new sogo();
 sogoObj.id = "Sogo1";
+
+function annonymous(request,response){
+    dump('\n####test'+request.path);
+   sogoObj.prefixHandler(request,response);
+}
 
 function run_test() {
     
@@ -374,9 +379,9 @@ var client = {
                     'LOCATION:Paris\n'+
                     'UID: 1b05e158-631a-445f-8c5a-5743b5a05169'+
                     'TRANSP:OPAQUE\n'+
-                    'ORGANIZER;CN=Organizer Name;SENT-BY="mailto:malinthak2@gmail.com":mailto:malinthak2@gmail.com\n'+
-                    'ATTENDEE;CN=Attendee1 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:mozilla@kewis.ch\n'+
-                    'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee@example.com\n'+
+                    'ORGANIZER;CN=Organizer Name;SENT-BY="mailto:organizer@example.com":mailto:malinthak2@gmail.com\n'+
+                    'ATTENDEE;CN=Attendee1 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee1@example.com\n'+
+                    'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee2@example.com\n'+
                     'END:VEVENT\n',
     //schedule-tag and etag of organizer's object resource
 };

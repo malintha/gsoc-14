@@ -186,9 +186,26 @@ fakeServer.prototype = {
             response.finish();
         }
         //modify request
-        else if(request.method=='PUT' && matchheader>0 && body)
-             dump('##modifyRequeest');     
+        else if(request.method=='PUT' && matchheader>0 && body){
+            dump('##modifyRequeest');     
+            let changeItemId = sogoObj.storage.getMetaData(matchheader));
+            let oldItem = null;
+            let newItem = createEventFromIcalString(body);
+            sogoObj.storage.getItem(getItemId, {
+                onGetResult: function (cal, stat, type, detail, count, items) {
+                    oldItem = items[0];
+                },
+                onOperationComplete: function() {} 
+            });
 
+            calendar.modifyItem(newItem,oldItem,{
+                onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
+                    dump("\nItem successfully modified on calendar "+aCalendar.name);
+                    response.setStatusLine(request.httpVersion, 200, "resource changed");
+                    response.finish();
+                }
+            });
+        }
     },
     
     getHandler: function(request,response){
@@ -335,13 +352,6 @@ sogo.prototype = new fakeServer();
 var sogoObj = new sogo();
 sogoObj.id = "Sogo1";
 
-
-
-
-
-
-
-
 function run_test() {
     
     sogoObj.init(sogoObj._propertyBag.scheduleInboxURL);
@@ -372,7 +382,6 @@ var client = {
 };
 
 add_task(test_doFakeServer);
-
 
 function test_doFakeServer(){
 

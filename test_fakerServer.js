@@ -31,19 +31,13 @@ function fakeServer() {
 
 
 fakeServer.prototype = {
-
-    init: function init_storage_calendar() {
-
-    },
-
+    
     getLocalPort: function get_LocalPort() {
         return this.httpServer.identity.primaryPort;
     },
     
     prefixHandler: function main_PrefixHandler(request, response) {
-        response.processAsync();
-        dump('#####test '+this._propertyBag.scheduleInboxURL);
-        //dump("\n### prefixHandler"+ request.path.matches(sogoObj._propertyBag.scheduleInboxURL+'.*'));       
+        response.processAsync();     
         try {
             if(request.path == this._propertyBag.scheduleInboxURL){
                 //PROPFIND,REPORT to / come here --------------------------------- /calendar/xpcshell/
@@ -60,17 +54,15 @@ fakeServer.prototype = {
             else {
                 //PUT requests to /event.ics
                 if(request.method=='PUT'){
-                    dump("###PUT\n");
                     fakeServer.prototype.putHandler(this,request,response);
                 }
                 else if(request.method == 'GET'){
-                    dump('##GET\n');
                     fakeServer.prototype.getHandler(this,request,response)
                 }
                 else {
-                dump("###Recieved unidentified request : "+request.path+"\n");
-                response.setStatusLine(request.httpVersion, 400, 'Bad Request');
-                response.finish()
+                    dump("###Recieved unidentified request : "+request.path+"\n");
+                    response.setStatusLine(request.httpVersion, 400, 'Bad Request');
+                    response.finish()
                 }
             }
 
@@ -103,7 +95,9 @@ fakeServer.prototype = {
             else if (request.method == 'REPORT') {
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
-                response.write(scope._responseTemplates._reportPropfind);
+                dump('***##name'+scope.storage.name);
+                var that = scope;
+                response.write(that._responseTemplates._reportPropfind);
                 response.finish();
             }
             else {
@@ -134,7 +128,6 @@ fakeServer.prototype = {
         catch(e) {
             dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
         }
-
     },
     
     principalHandler: function principalHandler(scope,request,response) {
@@ -177,15 +170,20 @@ fakeServer.prototype = {
             //put etag & scheduleTag vs item.id in meta data as key,value pair
             let tempEtag = scope.generateETag();
             let tempscheduleTag = fakeServer.prototype.generateScheduleTag();
-            //setting meta data for the event
-            scope.storage.setMetaData(tempServerItem.id,tempEtag);
-            scope.storage.setMetaData('sTag'+tempServerItem.id,tempscheduleTag);
-            scope.storage.setMetaData(tempEtag,tempServerItem.id);
-            scope.storage.setMetaData(tempscheduleTag,tempServerItem.id);
-            
-            dump("###Id to Etag: "+scope.storage.getMetaData(tempEtag));
-            response.setStatusLine(request.httpVersion, 201, "resource created");
-            response.finish();
+            try {
+                //setting meta data for the event
+                this.setMetaData(scope,'eTag',tempServerItem.id);
+                this.setMetaData(scope,'sTag',tempServerItem.id);
+                dump("###Id to Etag: "+scope.storage.getMetaData('eTag'+tempServerItem.id));
+                dump("###Id to Etag: "+scope.storage.getMetaData('sTag'+tempServerItem.id));
+               // dump("###Id to Stag: "+scope.storage.getMetaData('sTag'+tempServerItem.id));
+                response.setStatusLine(request.httpVersion, 201, "resource created");
+                response.finish();
+            }
+            catch(e){
+                dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
+            }
+
         }
         //modify request
         else if(request.method=='PUT' && matchheader>0 && body){
@@ -225,8 +223,23 @@ fakeServer.prototype = {
         });
         response.setHeader('content-type', 'text/calendar');
         response.write(tempGetItem.icalString);
+        response.finish();
     },
-
+    
+    setMetaData: function setMetaData(scope,tagType, itemId){
+        //dump('**name'+sogoObj.storage.name);
+        let tempTag = null;
+        if(tagType == 'eTag'){
+            tempTag = this.generateETag();
+            scope.storage.setMetaData('eTag'+itemId,tempTag);
+        }
+        else if(tagType == 'sTag'){
+            tempTag = this.generateScheduleTag();
+            scope.storage.setMetaData('sTag'+itemId,tempTag);
+        }
+        scope.storage.setMetaData(tempTag,itemId);
+    }, 
+    
     getItemString: function(itemId,calendar) {
         //get a icalString for given Item Id
         dump('***getItemString');
@@ -326,8 +339,8 @@ function sogo() {
             '       <D:href>'+this._propertyBag.scheduleInboxURL+this._propertyBag.itemId+'.ics</D:href>\n'+
             '         <D:propstat>\n' +
             '           <D:prop>\n' +
-            '             <D:getetag>"'+this.storage.getMetaData(this._propertyBag.itemId)+'"</D:getetag>\n'+
-            '             <C:schedule-tag>"'+this.storage.getMetaData('sTag'+this._propertyBag.itemId)+'"</C:schedule-tag>\n'+
+            '             <D:getetag>"'+'"</D:getetag>\n'+
+            '             <C:schedule-tag>"'+this.storage+'"</C:schedule-tag>\n'+
             '             <C:calendar-data>'+this.getItemString(this._propertyBag.itemId,this.storage)+'</C:calendar-data>\n'+
             '           </D:prop>\n' +
             '           <D:status>HTTP/1.1 200 OK</D:status>\n' +
@@ -366,7 +379,7 @@ function sogo() {
             '       <D:href>'+this._propertyBag.scheduleInboxURL+this._propertyBag.itemId+'.ics</D:href>\n'+
             '         <D:propstat>\n'+
             '           <D:prop>\n'+
-            '             <D:getetag>"'+this.storage.getMetaData(this._propertyBag.itemId)+'"</D:getetag>\n'+
+            '             <D:getetag>"'+this.storage.name+'"</D:getetag>\n'+
             '             <C:schedule-tag>"'+this.storage.getMetaData('sTag'+this._propertyBag.itemId)+'"</C:schedule-tag>\n'+
             '             <C:calendar-data>'+this._propertyBag.icalString+'</C:calendar-data>\n'+
             '           </D:prop>\n'+

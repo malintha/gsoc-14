@@ -172,11 +172,13 @@ fakeServer.prototype = {
             let tempscheduleTag = fakeServer.prototype.generateScheduleTag();
             try {
                 //setting meta data for the event
-                this.setMetaData(scope,'eTag',tempServerItem.id);
-                this.setMetaData(scope,'sTag',tempServerItem.id);
-                dump("###Id to Etag: "+scope.storage.getMetaData('eTag'+tempServerItem.id));
-                dump("###Id to Etag: "+scope.storage.getMetaData('sTag'+tempServerItem.id));
-               // dump("###Id to Stag: "+scope.storage.getMetaData('sTag'+tempServerItem.id));
+                scope.storage.setMetaData('eTag',tempServerItem.id);
+                scope.storage.setMetaData('sTag',tempServerItem.id);
+                scope.storage.setMetaData('eTag'+tempServerItem.id,tempEtag);
+                scope.storage.setMetaData('sTag'+tempServerItem.id,tempscheduleTag);
+                //this works fine
+                dump("###Id to Etag: "+scope.storage.getMetaData('eTag1b05e158-631a-445f-8c5a-5743b5a05169'));
+                dump("###Id to Stag: "+scope.storage.getMetaData('sTag1b05e158-631a-445f-8c5a-5743b5a05169'));
                 response.setStatusLine(request.httpVersion, 201, "resource created");
                 response.finish();
             }
@@ -225,21 +227,7 @@ fakeServer.prototype = {
         response.write(tempGetItem.icalString);
         response.finish();
     },
-    
-    setMetaData: function setMetaData(scope,tagType, itemId){
-        //dump('**name'+sogoObj.storage.name);
-        let tempTag = null;
-        if(tagType == 'eTag'){
-            tempTag = this.generateETag();
-            scope.storage.setMetaData('eTag'+itemId,tempTag);
-        }
-        else if(tagType == 'sTag'){
-            tempTag = this.generateScheduleTag();
-            scope.storage.setMetaData('sTag'+itemId,tempTag);
-        }
-        scope.storage.setMetaData(tempTag,itemId);
-    }, 
-    
+     
     getItemString: function(itemId,calendar) {
         //get a icalString for given Item Id
         dump('***getItemString');
@@ -379,8 +367,10 @@ function sogo() {
             '       <D:href>'+this._propertyBag.scheduleInboxURL+this._propertyBag.itemId+'.ics</D:href>\n'+
             '         <D:propstat>\n'+
             '           <D:prop>\n'+
-            '             <D:getetag>"'+this.storage.name+'"</D:getetag>\n'+
-            '             <C:schedule-tag>"'+this.storage.getMetaData('sTag'+this._propertyBag.itemId)+'"</C:schedule-tag>\n'+
+            //this prints null
+            '             <D:getetag>"'+this.storage.getMetaData('eTag1b05e158-631a-445f-8c5a-5743b5a05169')+'"</D:getetag>\n'+
+            //this prints serverStorageCalendar
+            '             <C:schedule-tag>"'+this.storage.name+'"</C:schedule-tag>\n'+
             '             <C:calendar-data>'+this._propertyBag.icalString+'</C:calendar-data>\n'+
             '           </D:prop>\n'+
             '           <D:status>HTTP/1.1 200 OK</D:status>\n'+

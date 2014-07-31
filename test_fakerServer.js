@@ -27,6 +27,7 @@ function fakeServer() {
     this.calUrl = "http://localhost"+this.localPort+'/calendar/xpcshell/';
     this.storage = this.serverCalmgr.createCalendar("memory", Services.io.newURI(this.calUrl, null, null));
     this.storage.name = "serverStorageCalendar";
+    this.storage.setMetaData('test','This is testmeta data');
 }
 
 
@@ -96,8 +97,8 @@ fakeServer.prototype = {
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
                 dump('***##name'+scope.storage.name);
-                var that = scope;
-                response.write(that._responseTemplates._reportPropfind);
+                dump('\n\n##testreport:\n'+scope._responseTemplates._reportPropfind);
+                response.write(scope._responseTemplates._reportPropfind);
                 response.finish();
             }
             else {
@@ -168,17 +169,14 @@ fakeServer.prototype = {
                 }
             });
             //put etag & scheduleTag vs item.id in meta data as key,value pair
-            let tempEtag = scope.generateETag();
-            let tempscheduleTag = fakeServer.prototype.generateScheduleTag();
+            let tempEtag = scope.generateTag();
+            let tempscheduleTag = scope.generateTag();
             try {
                 //setting meta data for the event
-                scope.storage.setMetaData('eTag',tempServerItem.id);
-                scope.storage.setMetaData('sTag',tempServerItem.id);
+                scope.storage.setMetaData(tempEtag,tempServerItem.id);
+                scope.storage.setMetaData(tempscheduleTag,tempServerItem.id);
                 scope.storage.setMetaData('eTag'+tempServerItem.id,tempEtag);
                 scope.storage.setMetaData('sTag'+tempServerItem.id,tempscheduleTag);
-                //this works fine
-                dump("###Id to Etag: "+scope.storage.getMetaData('eTag1b05e158-631a-445f-8c5a-5743b5a05169'));
-                dump("###Id to Stag: "+scope.storage.getMetaData('sTag1b05e158-631a-445f-8c5a-5743b5a05169'));
                 response.setStatusLine(request.httpVersion, 201, "resource created");
                 response.finish();
             }
@@ -206,6 +204,7 @@ fakeServer.prototype = {
                 onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
                     //change etag and schedule tag. Assume it is a major change by organizer to change the scheduleTag 
                     scope.storage.setMetaData('eTag'+changeItemId,++tempEtag);
+                    scope.storage.setMetaData('sTag'+changeItemId,++tempEtag);
                     dump("\nItem successfully modified on calendar "+aCalendar.name);
                     response.setStatusLine(request.httpVersion, 200, "resource changed");
                     response.finish();
@@ -243,21 +242,14 @@ fakeServer.prototype = {
 
     },
     
-    generateETag: function generateETag() {
+    generateTag: function generateTag() {
         let tag = "";
         let possible = "0123456789";
         for(let i=0; i < 5; i++ )
             tag += possible.charAt(Math.floor(Math.random() * possible.length));
         return tag;    
     },
-        
-    generateScheduleTag: function generateScheduleTag() {
-        let tag = "";
-        let possible = "abcdefghijklmnopqrstuvwxyz0123456789";
-        for(let i=0; i < 5; i++ )
-            tag += possible.charAt(Math.floor(Math.random() * possible.length));
-        return tag;    
-    },
+
     test: function test(){
        dump("\n\n###TESTSTS###");
     }
@@ -321,21 +313,6 @@ function sogo() {
             '   </D:response>\n' +
             ' </D:multistatus>',
         
-        _calDataPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
-            '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n' +
-            '     <D:response>\n' +
-            '       <D:href>'+this._propertyBag.scheduleInboxURL+this._propertyBag.itemId+'.ics</D:href>\n'+
-            '         <D:propstat>\n' +
-            '           <D:prop>\n' +
-            '             <D:getetag>"'+'"</D:getetag>\n'+
-            '             <C:schedule-tag>"'+this.storage+'"</C:schedule-tag>\n'+
-            '             <C:calendar-data>'+this.getItemString(this._propertyBag.itemId,this.storage)+'</C:calendar-data>\n'+
-            '           </D:prop>\n' +
-            '           <D:status>HTTP/1.1 200 OK</D:status>\n' +
-            '         </D:propstat>\n' +
-            '     </D:response>\n' +
-            '   </D:multistatus>\n',
-        
         _principalPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
             '   <D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
             '       <D:response>\n' +
@@ -361,23 +338,38 @@ function sogo() {
             '       </D:response>\n' +
             '   </D:multistatus>',
         
-        _reportPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
+
+};
+    this.refreshResponses = function(){
+        this._responseTemplates._reportPropfind = '<?xml version="1.0" encoding="UTF-8"?>\n'+
             '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
             '     <D:response>\n'+
             '       <D:href>'+this._propertyBag.scheduleInboxURL+this._propertyBag.itemId+'.ics</D:href>\n'+
             '         <D:propstat>\n'+
             '           <D:prop>\n'+
-            //this prints null
             '             <D:getetag>"'+this.storage.getMetaData('eTag1b05e158-631a-445f-8c5a-5743b5a05169')+'"</D:getetag>\n'+
-            //this prints serverStorageCalendar
-            '             <C:schedule-tag>"'+this.storage.name+'"</C:schedule-tag>\n'+
-            '             <C:calendar-data>'+this._propertyBag.icalString+'</C:calendar-data>\n'+
+            '             <C:schedule-tag>"'+this.storage.getMetaData('sTag1b05e158-631a-445f-8c5a-5743b5a05169')+'"</C:schedule-tag>\n'+
+            '             <C:calendar-data>'+this.getItemString('1b05e158-631a-445f-8c5a-5743b5a05169',this.storage)+'</C:calendar-data>\n'+
+            '           </D:prop>\n'+
+            '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
+            '         </D:propstat>\n'+
+            '     </D:response>\n'+
+            '   </D:multistatus>\n';
+            
+        this._responseTemplates._calDataPropfind = '<?xml version="1.0" encoding="UTF-8"?>\n'+
+            '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
+            '     <D:response>\n'+
+            '       <D:href>'+this._propertyBag.scheduleInboxURL+this._propertyBag.itemId+'.ics</D:href>\n'+
+            '         <D:propstat>\n'+
+            '           <D:prop>\n'+
+            '             <D:getetag>"'+this.storage.getMetaData('eTag1b05e158-631a-445f-8c5a-5743b5a05169')+'"</D:getetag>\n'+
+            '             <C:schedule-tag>"'+this.storage.getMetaData('sTag1b05e158-631a-445f-8c5a-5743b5a05169')+'"</C:schedule-tag>\n'+
+            '             <C:calendar-data>'+this.getItemString('1b05e158-631a-445f-8c5a-5743b5a05169',this.storage)+'</C:calendar-data>\n'+
             '           </D:prop>\n'+
             '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
             '         </D:propstat>\n'+
             '     </D:response>\n'+
             '   </D:multistatus>\n'
-
 };
 }
 
@@ -387,8 +379,8 @@ var sogoObj = new sogo();
 sogoObj.id = "Sogo1";
 
 function annonymous(request,response){
-    dump('\n####annonymous'+request.path);
-   sogoObj.prefixHandler(request,response);
+    sogoObj.refreshResponses();
+    sogoObj.prefixHandler(request,response);
 }
 
 function run_test() {

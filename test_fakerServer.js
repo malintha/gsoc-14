@@ -18,21 +18,17 @@ function fakeServer() {
     this._propertyBag = null;
     this._responseTemplates = null;
     this.httpServer = new HttpServer();
-    this.httpServer.start(50002);
-    
-    this.localPort = this.httpServer.identity.primaryPort;
-    this.httpServer.registerPrefixHandler('/', annonymous);
-    
+    this.httpServer.start(-1);
+    this.httpServer.registerPrefixHandler('/', router);
     this.serverCalmgr = cal.getCalendarManager();
     this.calUrl = "http://localhost"+this.localPort+'/calendar/xpcshell/';
     this.storage = this.serverCalmgr.createCalendar("memory", Services.io.newURI(this.calUrl, null, null));
     this.storage.name = "serverStorageCalendar";
-    this.storage.setMetaData('test','This is testmeta data');
 }
 
 
 fakeServer.prototype = {
-    
+
     getLocalPort: function get_LocalPort() {
         return this.httpServer.identity.primaryPort;
     },
@@ -41,23 +37,24 @@ fakeServer.prototype = {
         response.processAsync();     
         try {
             if(request.path == this._propertyBag.scheduleInboxURL){
-                //PROPFIND,REPORT to / come here --------------------------------- /calendar/xpcshell/
+                //Handles PROPFIND,REPORT methods
                 fakeServer.prototype.initPropfind(this,request,response);
             }
             else if (request.path == this._propertyBag.calendarHomeSetset){
-                //OPTIONS should come here-----------------------------------------/calendar/
+                //Handles OPTIONS method
                 fakeServer.prototype.calendarHandler(this,request,response);
             }
             else if(request.path == this._propertyBag.userPrincipalHref){
-                //OPTIONS should come here-----------------------------------------/users/xpcshell/
+                //Handles PROPFIND requests to user set
                 fakeServer.prototype.principalHandler(this,request,response);
             }
             else {
-                //PUT requests to /event.ics
+                //PUT requests to scheduleInboxURL/event.ics
                 if(request.method=='PUT'){
                     fakeServer.prototype.putHandler(this,request,response);
                 }
                 else if(request.method == 'GET'){
+                //GET requests to scheduleInboxURL/event.ics
                     fakeServer.prototype.getHandler(this,request,response)
                 }
                 else {
@@ -77,9 +74,7 @@ fakeServer.prototype = {
         let body = NetUtil.readInputStreamToString(is, is.available(), {
             charset: 'UTF-8'
         });
-        
-        dump('initPropfind '+request.method+" : "+body);
-        dump('\n\n## '+scope._propertyBag.name);
+
         try {
             if (request.method == 'PROPFIND' && body.indexOf('current-user-prin') > -1){
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
@@ -113,8 +108,6 @@ fakeServer.prototype = {
     },
     
     calendarHandler: function calendarHandler(scope,request,response) {
-        //resolve the scope problem
-        dump("####OPTIONS "+request.method);
         try {
             if (request.method == "OPTIONS") {
                 response.setStatusLine(request.httpVersion, 200, "OK");
@@ -149,7 +142,6 @@ fakeServer.prototype = {
         let body = NetUtil.readInputStreamToString(is, is.available(), {
             charset: 'UTF-8'
         });
-          dump('PUT BODY'+body);
         //PUT request
         if(request.hasHeader("If-None-Match")){
             matchheader = request.getHeader("If-None-Match");
@@ -161,18 +153,16 @@ fakeServer.prototype = {
         }
           //create resource in server calendar
         if(request.method=="PUT" && matchheader=="*" && body){
-
             let tempServerItem = createEventFromIcalString(body);
             scope.storage.addItem(tempServerItem, {
                 onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
                     dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
                 }
             });
-            //put etag & scheduleTag vs item.id in meta data as key,value pair
             let tempEtag = scope.generateTag();
             let tempscheduleTag = scope.generateTag();
             try {
-                //setting meta data for the event
+                //setting meta data for the event as key/value pairs
                 scope.storage.setMetaData(tempEtag,tempServerItem.id);
                 scope.storage.setMetaData(tempscheduleTag,tempServerItem.id);
                 scope.storage.setMetaData('eTag'+tempServerItem.id,tempEtag);
@@ -186,8 +176,7 @@ fakeServer.prototype = {
 
         }
         //modify request
-        else if(request.method=='PUT' && matchheader>0 && body){
-            dump('##modifyRequeest');    
+        else if(request.method=='PUT' && matchheader>0 && body){   
             //get the corresponding ItemId to recieved header
             let changeItemId = scope.storage.getMetaData(matchheader);
             let newItem = createEventFromIcalString(body);
@@ -200,11 +189,11 @@ fakeServer.prototype = {
                 onOperationComplete: function() {} 
             });
 
-            calendar.modifyItem(newItem,oldItem,{
+            scope.storage.modifyItem(newItem,oldItem,{
                 onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
                     //change etag and schedule tag. Assume it is a major change by organizer to change the scheduleTag 
-                    scope.storage.setMetaData('eTag'+changeItemId,++tempEtag);
-                    scope.storage.setMetaData('sTag'+changeItemId,++tempEtag);
+                    scope.storage.setMetaData('eTag'+changeItemId,++scope.storage.getMetaData('eTag'+changeItemId));
+                    scope.storage.setMetaData('eTag'+changeItemId,++scope.storage.getMetaData('sTag'+changeItemId));
                     dump("\nItem successfully modified on calendar "+aCalendar.name);
                     response.setStatusLine(request.httpVersion, 200, "resource changed");
                     response.finish();
@@ -229,7 +218,6 @@ fakeServer.prototype = {
      
     getItemString: function(itemId,calendar) {
         //get a icalString for given Item Id
-        dump('***getItemString');
         let tempGetItemString = null;
         calendar.getItem(itemId, {
             onGetResult: function (cal, stat, type, detail, count, items) {
@@ -237,11 +225,10 @@ fakeServer.prototype = {
             },
             onOperationComplete: function() {} 
         });
-        dump('\n\n***tempGetItemString'+tempGetItemString);
         return tempGetItemString;
-
     },
     
+    //Randomly generates a tag with given combination
     generateTag: function generateTag() {
         let tag = "";
         let possible = "0123456789";
@@ -255,6 +242,7 @@ fakeServer.prototype = {
     }
 };
 
+//Example server implementation
 function sogo() {
     this.id = '1';
     this._propertyBag = {
@@ -378,7 +366,7 @@ sogo.prototype = new fakeServer();
 var sogoObj = new sogo();
 sogoObj.id = "Sogo1";
 
-function annonymous(request,response){
+function router(request,response){
     sogoObj.refreshResponses();
     sogoObj.prefixHandler(request,response);
 }

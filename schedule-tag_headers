@@ -1,0 +1,166 @@
+# HG changeset patch
+# Parent c6e6b13f53196b81aa7b059e04526669fa944ec6
+
+diff -r c6e6b13f5319 calendar/providers/caldav/calDavCalendar.js
+--- a/calendar/providers/caldav/calDavCalendar.js	Wed Aug 06 18:04:51 2014 +0100
++++ b/calendar/providers/caldav/calDavCalendar.js	Sat Aug 09 00:31:36 2014 +0530
+@@ -822,9 +822,21 @@
+ 
+         this.sendHttpRequest(eventUri, modifiedItemICS, MIME_TEXT_CALENDAR, null, (channel) => {
+             if (!aIgnoreEtag) {
+-                channel.setRequestHeader("If-Match",
+-                                         this.mItemInfoCache[aNewItem.id].etag,
+-                                         false);
++                scheduleTag = this.mItemInfoCache[aNewItem.id].scheduletag;
++                etag = this.mItemInfoCache[aNewItem.id].etag;
++                //check if the server has returned ScheduleTag for this item. If yes, set the header to If-Schedule-Tag-Match
++                if(scheduleTag){
++                    cal.LOG("RFC6638: Schedule Tag to match "+ this.mItemInfoCache[aNewItem.id].scheduletag);
++                    channel.setRequestHeader("If-Schedule-Tag-Match",
++                                             scheduleTag,
++                                             false);
++                }
++                //try with etag property. Therefore the request header should be If-Match
++                else{
++                    channel.setRequestHeader("If-Match",
++                                             etag,
++                                             false);
++                }
+             }
+             return modListener;
+         }, () => {
+@@ -993,9 +1005,20 @@
+ 
+         this.sendHttpRequest(eventUri, null, null, null, (channel) => {
+             if (!aIgnoreEtag) {
++                let scheduleTag = this.mItemInfoCache[aItem.id].scheduletag;
+                 let etag = this.mItemInfoCache[aItem.id].etag;
+-                cal.LOG("CalDAV: Will only delete if matches etag " + etag);
+-                channel.setRequestHeader("If-Match", etag, false);
++                //Check if the server has returned a ScheduleTag value for the item. If yes, set the 
++                //request header to If-Schedule-Tag-Match
++                if (scheduleTag) {
++                    cal.LOG("RFC6638: ScheduleTag match uuid: "+aItem.id+" scheduleTag: "+scheduleTag);
++                    cal.LOG("CalDAV: Will only delete if matches ScheduleTag " + scheduleTag);
++                    channel.setRequestHeader("If-Schedule-Tag-Match", scheduleTag, false);
++                }
++                //else allow to perform the delete operation based on the etag comparison
++                else {
++                    cal.LOG("CalDAV: Will only delete if matches etag " + etag);
++                    channel.setRequestHeader("If-Match", etag, false);
++                }
+             }
+             channel.requestMethod = "DELETE";
+             return delListener;
+@@ -1013,8 +1036,8 @@
+      * @param aUri      Base URI of the request
+      * @param aListener Listener
+      */
+-    addTargetCalendarItem : function caldav_addTargetCalendarItem(path,calData,aUri, etag, aListener) {
+-        let parser = Components.classes["@mozilla.org/calendar/ics-parser;1"]
++        addTargetCalendarItem : function caldav_addTargetCalendarItem(path,calData,aUri, etag, aScheduleTag ,aListener) {
++            let parser = Components.classes["@mozilla.org/calendar/ics-parser;1"]
+                                .createInstance(Components.interfaces.calIIcsParser);
+         // aUri.path may contain double slashes whereas path does not
+         // this confuses our counting, so remove multiple successive slashes
+@@ -1085,7 +1108,8 @@
+ 
+             self.mHrefIndex[path] = item.id;
+             self.mItemInfoCache[item.id].etag = etag;
+-
++            self.mItemInfoCache[item.id].scheduletag = aScheduleTag;
++            cal.LOG("RFC6638: schedule-tag added to mItemInfoCache UID : "+item.id+" schedule-tag : "+self.mItemInfoCache[item.id].scheduletag);
+             let needsAddModify = false;
+             if (self.isCached) {
+                 self.setMetaData(item.id, path, etag, isInboxItem);
+@@ -2856,6 +2880,8 @@
+         copyHeader("Recipient");
+         copyHeader("If-None-Match");
+         copyHeader("If-Match");
++        copyHeader("If-Schedule-Tag-Match");
++        
+         if (aNewChannel.URI.host == "apidata.googleusercontent.com") {
+             copyHeader("Authorization");
+         }
+diff -r c6e6b13f5319 calendar/providers/caldav/calDavRequestHandlers.js
+--- a/calendar/providers/caldav/calDavRequestHandlers.js	Wed Aug 06 18:04:51 2014 +0100
++++ b/calendar/providers/caldav/calDavRequestHandlers.js	Sat Aug 09 00:31:36 2014 +0530
+@@ -689,6 +689,7 @@
+     unhandledErrors : 0,
+     itemsNeedFetching: null,
+     additionalSyncNeeded: false,
++    isScheduleTagSupport: false,
+ 
+     QueryInterface: XPCOMUtils.generateQI([
+         Components.interfaces.nsISAXContentHandler,
+@@ -719,6 +720,7 @@
+           '<C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">' +
+             '<D:prop>' +
+               '<D:getetag/>' +
++              '<C:schedule-tag/>'+
+               '<C:calendar-data/>' +
+             '</D:prop>' +
+             hrefString +
+@@ -893,6 +895,12 @@
+                 this.tag = aLocalName.replace(/-/g,'');
+                 this.currentResponse[this.tag ] = "";
+                 break;
++            case "schedule-tag":
++                this.isScheduleTagSupport = true;
++                this.tag = aLocalName.replace(/-/g,'');
++                this.currentResponse[this.tag] = "";
++                cal.LOG("RFC6638: isScheduleTagSupport: "+this.isScheduleTagSupport);
++            break;
+         }
+         if (this.calendar.verboseLogging()) {
+             this.logXML += "<" + aQName + ">";
+@@ -918,10 +926,37 @@
+                     } else {
+                         cal.LOG("CalDAV: skipping unfound deleted item : " + r.href);
+                     }
+-                // Created or Updated item
+-                } else if (r.getetag && r.getetag.length &&
+-                           r.href && r.href.length &&
+-                           r.calendardata && r.calendardata.length) {
++                
++                } 
++                // Created or Updated item, schedule-tag comparison
++                else if (this.isScheduleTagSupport && r.scheduletag){
++                    cal.LOG("RFC6638: Calendar supports schedule-tag : "+this.isScheduleTagSupport+" : "+r.scheduletag);
++                    let oldScheduleTag;
++                    let itemId = this.calendar.mHrefIndex[r.href];
++                    if(itemId) {
++                        oldScheduleTag = this.calendar.mItemInfoCache[itemId].scheduletag;
++                    }
++                    else {
++                        oldScheduleTag = null;
++                    }
++                    //created or updated item
++                    if (!oldScheduleTag || oldScheduleTag != r.scheduletag) {
++                        this.changeCount++;
++                        this.calendar.addTargetCalendarItem(r.href,
++                                                            r.calendardata,
++                                                            this.baseUri,
++                                                            r.getetag,
++                                                            r.scheduletag,
++                                                            this.listener);
++                    }
++                    else {
++                        cal.LOG("CalDAV: skipping item with unmodified schedule-tag : " + oldScheduleTag);
++                    }
++                }
++                // Created or Updated item, etag comparison
++                else if (r.getetag && r.getetag.length &&
++                         r.href && r.href.length &&
++                         r.calendardata && r.calendardata.length) {
+                     let oldEtag;
+                     let itemId = this.calendar.mHrefIndex[r.href];
+                     if (itemId) {
+@@ -935,6 +970,7 @@
+                                                             r.calendardata,
+                                                             this.baseUri,
+                                                             r.getetag,
++                                                            r.scheduletag,
+                                                             this.listener);
+                     } else {
+                         cal.LOG("CalDAV: skipping item with unmodified etag : " + oldEtag);

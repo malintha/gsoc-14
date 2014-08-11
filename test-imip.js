@@ -45,6 +45,8 @@ const invitationAttachment = [
 /**
  * initialize modules and inject the email with attachment
  */
+var jumlib = {}; 
+Components.utils.import("resource://mozmill/modules/jum.js", jumlib);
 
 function setupModule(module) {
     controller = mozmill.getMail3PaneController();
@@ -152,12 +154,22 @@ function testEvent() {
     let location = new elementslib.ID(event.window.document, 'item-location');
     controller.assertValue(location, 'Earth');
     
-    let start = new elementslib.ID(event.window.document, 'item-start-row');
-    controller.assertValue(start, 'Thu 15 May 2014 05:00 AM, UTC');
-
+    let start = new elementslib.ID(event.window.document, 'item-start-row');      
+    let startAnonElem = event.window.document.getAnonymousElementByAttribute(start.getNode(), "anonid", "item-datetime-value");
+    let startVal = startAnonElem.value;
+    
+    if(!(startVal=='Thu 15 May 2014 05:00 AM, UTC')){
+        throw new Error("could not validate the values\n");
+    }
+    
     let end = new elementslib.ID(event.window.document, 'item-end-row');
-    controller.assertValue(end, 'Thu 15 May 2014 06:30 AM, UTC');
-
+    let endAnonElem = event.window.document.getAnonymousElementByAttribute(end.getNode(), "anonid", "item-datetime-value");
+    let endVal = endAnonElem.value;
+    
+    if(!(endVal=='Thu 15 May 2014 06:30 AM, UTC')){
+        throw new Error("could not validate the values\n");
+    }
+    
     // press escape to close Event-Summary-Dialog
     event.keypress(undefined, 'VK_ESCAPE', {
     });

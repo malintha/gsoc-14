@@ -4,13 +4,10 @@
 Components.utils.import('resource://gre/modules/Promise.jsm');
 Components.utils.import('resource://testing-common/httpd.js');
 Components.utils.import('resource://gre/modules/NetUtil.jsm')
-// Components.utils.import('resource://gre/modules/CSPUtils.jsm');
+Components.utils.import('resource://gre/modules/CSPUtils.jsm');
 Components.utils.import('resource://calendar/modules/calUtils.jsm');
 Components.utils.import('resource://gre/modules/FileUtils.jsm');
 Components.utils.import('resource:///modules/Services.jsm');
-Components.utils.import("resource://calendar/modules/calAsyncUtils.jsm");
-Components.utils.import("resource://gre/modules/Task.jsm");
-
 Services.prefs.setBoolPref('javascript.options.showInConsole', true);
 Services.prefs.setBoolPref('browser.dom.window.dump.enabled', true);
 Services.prefs.setBoolPref('calendar.debug.log', true);
@@ -39,9 +36,8 @@ fakeServer.prototype = {
     prefixHandler: function main_PrefixHandler(request, response) {
         response.processAsync();     
         try {
-            if(request.path == this._propertyBag.calendarCollection){
+            if(request.path == this._propertyBag.scheduleInboxURL){
                 //Handles PROPFIND,REPORT methods
-                dump('###got initPropfind');
                 fakeServer.prototype.initPropfind(this,request,response);
             }
             else if (request.path == this._propertyBag.calendarHomeSetset){
@@ -72,8 +68,7 @@ fakeServer.prototype = {
         }
     },
 
-    initPropfind: function initPropfind(scope,request,response) {
-        dump('##calledInitPropFind');
+    initPropfind: function initPropfind(scope, request,response) {
         let is = request.bodyInputStream;
         let body = NetUtil.readInputStreamToString(is, is.available(), {
             charset: 'UTF-8'
@@ -160,23 +155,23 @@ fakeServer.prototype = {
             let tempServerItem = createEventFromIcalString(body);
             scope.storage.addItem(tempServerItem, {
                 onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
-                    let tempEtag = scope.generateTag();
-                    let tempscheduleTag = scope.generateTag();
-                    try {
-                        //setting meta data for the event as key/value pairs
-                        scope.storage.setMetaData(tempEtag,tempServerItem.id);
-                        scope.storage.setMetaData(tempscheduleTag,tempServerItem.id);
-                        scope.storage.setMetaData('eTag'+tempServerItem.id,tempEtag);
-                        scope.storage.setMetaData('sTag'+tempServerItem.id,tempscheduleTag);
-                        response.setStatusLine(request.httpVersion, 201, "resource created");
-                        response.finish();
-                    }
-                    catch(e){
-                        dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
-                    }
                     dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
                 }
             });
+            let tempEtag = scope.generateTag();
+            let tempscheduleTag = scope.generateTag();
+            try {
+                //setting meta data for the event as key/value pairs
+                scope.storage.setMetaData(tempEtag,tempServerItem.id);
+                scope.storage.setMetaData(tempscheduleTag,tempServerItem.id);
+                scope.storage.setMetaData('eTag'+tempServerItem.id,tempEtag);
+                scope.storage.setMetaData('sTag'+tempServerItem.id,tempscheduleTag);
+                response.setStatusLine(request.httpVersion, 201, "resource created");
+                response.finish();
+            }
+            catch(e){
+                dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
+            }
         }
         //modify request
         else if(request.method=='PUT' && matchheader>0 && body){   
@@ -191,6 +186,7 @@ fakeServer.prototype = {
                 },
                 onOperationComplete: function() {} 
             });
+
             scope.storage.modifyItem(newItem,oldItem,{
                 onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
                     //change etag and schedule tag. Assume it is a major change by organizer to change the scheduleTag 
@@ -203,7 +199,7 @@ fakeServer.prototype = {
             });
         }
     },
-/*
+
     getHandler: function(scope,request,response){
         //get the itemID from request.path
         let s = request.path.split(scope._propertyBag.scheduleInboxURL).pop();
@@ -219,19 +215,6 @@ fakeServer.prototype = {
         response.write(tempGetItem.icalString);
         response.finish();
     },
-*/
-    getHandler: Task.async(function*(scope,request, response) {
-        dump('\n\n###called getHandler');
-        //get the itemID from request.path
-        let s = request.path.split(scope._propertyBag.scheduleInboxURL).pop();
-        let getItemId = s.split('.ics')[0];
-        let pstor = cal.async.promisifyCalendar(scope.storage);
-        let item = yield pstor.getItem(getItemId);
-        dump("\n\n###retrieved Item"+item.icalString);
-        response.setHeader('content-type', 'text/calendar');
-        response.write(item.icalString);
-        response.finish();
-    }),
 
     getItemString: function(itemId,calendar) {
         //get a icalString for given Item Id
@@ -262,10 +245,9 @@ fakeServer.prototype = {
 function exampleServer() {
     this._propertyBag = {
         name: 'example',
-        calendarCollection: '/calendar/collection/',
         calendarHomeSetset: '/calendar/',
-        scheduleInboxURL: '/calendar/inbox/',
-        scheduleOutboxURL: '/calendar/outbox/',
+        scheduleInboxURL: '/calendar/xpcshell/',
+        scheduleOutboxURL: '/calendar/xpcshell/',
         userPrincipalHref: '/users/xpcshell/',
         ctag: '123456',
         supportedComps: ['VEVENT',
@@ -388,7 +370,7 @@ function router(request,response){
 
 //Start Client/Server model
 function run_test() {
-    dump("### Server ");
+    dump("### Server "+exampleServerObj.id+" started on "+exampleServerObj.getLocalPort());
     do_get_profile();
     registerFakeUMimTyp();
     do_register_cleanup(() => exampleServerObj.httpServer.stop(() => {}));
@@ -401,33 +383,15 @@ add_task(test_doFakeServer);
 
 function test_doFakeServer(){
     //create client calendar
-    try{
-        let calmgr = cal.getCalendarManager();
-        let calendarURL = 'http://localhost:'+exampleServerObj.getLocalPort()+exampleServerObj._propertyBag.calendarCollection;
-        let clientCalendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
-        clientCalendar.name="clientCalendar";
-        calmgr.registerCalendar(clientCalendar);
-        dump("###registered");
-        yield waitForInit(clientCalendar);
-        let item = createEventFromIcalString(exampleServerObj._propertyBag.icalString);
-
-        let pclient = cal.async.promisifyCalendar(clientCalendar);
-        yield pclient.addItem(item);
-        dump('\n###Done\n');
-        //yield promiseAddItem(item,clientCalendar);
-
-/*        let recievedItem = null;
-
-        clientCalendar.getItem(item.id,{
-                onGetResult: function (cal, stat, type, detail, count, items) {
-                recievedItem = items[0];
-                dump('\n\n###Recieved:'+recievedItem.icalString);
-                },
-                onOperationComplete: function() {} 
-        });
-        dump('\n\n##All Done##\n');*/
-    }
-    catch(e){} 
+    let calmgr = cal.getCalendarManager();
+    let calendarURL = 'http://localhost:'+exampleServerObj.getLocalPort()+exampleServerObj._propertyBag.scheduleInboxURL;
+    let clientCalendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
+    clientCalendar.name="clientCalendar";
+    calmgr.registerCalendar(clientCalendar);
+    yield waitForInit(clientCalendar);
+    let item = createEventFromIcalString(exampleServerObj._propertyBag.icalString);
+    yield promiseAddItem(item,clientCalendar);
+    dump('\n\nAll Done');
 }
 
 function registerFakeUMimTyp() {
@@ -468,10 +432,7 @@ function promiseAddItem(item, calendar) {
     calendar.addItem(item, {
         onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
             dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
-            dump('\n\n##All Done##\n');    
             deferred.resolve(aStatus);
         }
     });
 }
-
-

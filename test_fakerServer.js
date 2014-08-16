@@ -95,8 +95,6 @@ fakeServer.prototype = {
             else if (request.method == 'REPORT') {
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
-                dump('***##name'+scope.storage.name);
-                dump('\n\n##testreport:\n'+scope._responseTemplates._reportPropfind);
                 response.write(scope._responseTemplates._reportPropfind);
                 response.finish();
             }
@@ -152,12 +150,30 @@ fakeServer.prototype = {
         }
         //Modify PUT request
         else if(request.hasHeader("If-Schedule-Tag-Match")){
-            dump("##If-Schedule-Tag-Match");
             matchheader = request.getHeader("If-Schedule-Tag-Match");
+            dump("\n##If-Schedule-Tag-Match"+matchheader+'\n'+body);
         }
         //create resource in server calendar
         if(request.method=="PUT" && matchheader=="*" && body){
             let tempServerItem = createEventFromIcalString(body);
+ /*           //trying async:
+            let pstor = cal.async.promisifyCalendar(scope.storage);
+            yield pstor.addItem(tempServerItem);
+            dump('\n\n###Item added successfully on storage calendar');
+            try {
+                //setting meta data for the event as key/value pairs
+                scope.storage.setMetaData(tempEtag,tempServerItem.id);
+                scope.storage.setMetaData(tempscheduleTag,tempServerItem.id);
+                scope.storage.setMetaData('eTag'+tempServerItem.id,tempEtag);
+                scope.storage.setMetaData('sTag'+tempServerItem.id,tempscheduleTag);
+                dump('\n##etag for'+tempServerItem.id+'='+scope.storage.getMetaData('eTag'+tempServerItem.id));
+                dump('\n##UUID for'+tempscheduleTag+' = '+scope.storage.getMetaData(tempEtag));
+                response.setStatusLine(request.httpVersion, 201, "resource created");
+                response.finish();
+            }
+            catch(e){
+                dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
+            }*/
             scope.storage.addItem(tempServerItem, {
                 onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
                     let tempEtag = scope.generateTag();
@@ -168,6 +184,8 @@ fakeServer.prototype = {
                         scope.storage.setMetaData(tempscheduleTag,tempServerItem.id);
                         scope.storage.setMetaData('eTag'+tempServerItem.id,tempEtag);
                         scope.storage.setMetaData('sTag'+tempServerItem.id,tempscheduleTag);
+                        dump('\n##etag for'+tempServerItem.id+'='+scope.storage.getMetaData('eTag'+tempServerItem.id));
+                        dump('\n##UUID for'+tempscheduleTag+' = '+scope.storage.getMetaData(tempEtag));
                         response.setStatusLine(request.httpVersion, 201, "resource created");
                         response.finish();
                     }
@@ -179,23 +197,30 @@ fakeServer.prototype = {
             });
         }
         //modify request
-        else if(request.method=='PUT' && matchheader>0 && body){   
+        else {
+            matchheader = matchheader.substring(1,matchheader.length-1);
+            dump('\n##Modify request '+matchheader);
+            dump('\n##UUID for'+matchheader+' = '+scope.storage.getMetaData(matchheader));
             //get the corresponding ItemId to recieved header
             let changeItemId = scope.storage.getMetaData(matchheader);
             let newItem = createEventFromIcalString(body);
             let oldItem = null;
-
+            dump('\n##Modify request1'+changeItemId);
             scope.storage.getItem(changeItemId, {
                 onGetResult: function (cal, stat, type, detail, count, items) {
                     oldItem = items[0];
+                    dump('\n###oldItem'+oldItem.icalString);
                 },
                 onOperationComplete: function() {} 
             });
             scope.storage.modifyItem(newItem,oldItem,{
                 onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
                     //change etag and schedule tag. Assume it is a major change by organizer to change the scheduleTag 
-                    scope.storage.setMetaData('eTag'+changeItemId,++scope.storage.getMetaData('eTag'+changeItemId));
-                    scope.storage.setMetaData('eTag'+changeItemId,++scope.storage.getMetaData('sTag'+changeItemId));
+                    let tempEtag = scope.storage.getMetaData('eTag'+changeItemId);
+                    let tempscheduleTag = scope.storage.getMetaData('sTag'+changeItemId);
+                    dump('\ntempEtag:'+tempEtag+'\ntempScheduletag'+tempscheduleTag);
+                    scope.storage.setMetaData('eTag'+changeItemId,++tempEtag);
+                    scope.storage.setMetaData('sTag'+changeItemId,++tempscheduleTag);
                     dump("\nItem successfully modified on calendar "+aCalendar.name);
                     response.setStatusLine(request.httpVersion, 200, "resource changed");
                     response.finish();
@@ -203,23 +228,7 @@ fakeServer.prototype = {
             });
         }
     },
-/*
-    getHandler: function(scope,request,response){
-        //get the itemID from request.path
-        let s = request.path.split(scope._propertyBag.scheduleInboxURL).pop();
-        let getItemId = s.split('.ics')[0];
-        let tempGetItem = null;
-        scope.storage.getItem(getItemId, {
-            onGetResult: function (cal, stat, type, detail, count, items) {
-                tempGetItem = items[0];
-            },
-            onOperationComplete: function() {} 
-        });
-        response.setHeader('content-type', 'text/calendar');
-        response.write(tempGetItem.icalString);
-        response.finish();
-    },
-*/
+
     getHandler: Task.async(function*(scope,request, response) {
         dump('\n\n###called getHandler');
         //get the itemID from request.path
@@ -365,7 +374,7 @@ function exampleServer() {
             '         <D:propstat>\n'+
             '           <D:prop>\n'+
             '             <D:getetag>"'+this.storage.getMetaData('eTag1b05e158-631a-445f-8c5a-5743b5a05169')+'"</D:getetag>\n'+
-            '             <C:schedule-tag>"'+this.storage.getMetaData('sTag1b05e158-631a-445f-8c5a-5743b5a05169')+'"</C:schedule-tag>\n'+
+            '             <C:schedule-tag>"'+this.storage.getMetaData('eTag1b05e158-631a-445f-8c5a-5743b5a05169')+'"</C:schedule-tag>\n'+
             '             <C:calendar-data>'+this.getItemString('1b05e158-631a-445f-8c5a-5743b5a05169',this.storage)+'</C:calendar-data>\n'+
             '           </D:prop>\n'+
             '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
@@ -397,9 +406,7 @@ function run_test() {
     }});
 }
 
-add_task(test_doFakeServer);
-
-function test_doFakeServer(){
+add_task(function* test_doFakeServer(){
     //create client calendar
     try{
         let calmgr = cal.getCalendarManager();
@@ -407,28 +414,17 @@ function test_doFakeServer(){
         let clientCalendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
         clientCalendar.name="clientCalendar";
         calmgr.registerCalendar(clientCalendar);
-        dump("###registered");
         yield waitForInit(clientCalendar);
         let item = createEventFromIcalString(exampleServerObj._propertyBag.icalString);
-
         let pclient = cal.async.promisifyCalendar(clientCalendar);
         yield pclient.addItem(item);
-        dump('\n###Done\n');
-        //yield promiseAddItem(item,clientCalendar);
-
-/*        let recievedItem = null;
-
-        clientCalendar.getItem(item.id,{
-                onGetResult: function (cal, stat, type, detail, count, items) {
-                recievedItem = items[0];
-                dump('\n\n###Recieved:'+recievedItem.icalString);
-                },
-                onOperationComplete: function() {} 
-        });
-        dump('\n\n##All Done##\n');*/
+        let newItem = item.clone();
+        newItem.title = "NewItemTitle";
+        let mItem = yield pclient.modifyItem(newItem,item);
+        dump('\n###modified Item\n'+mItem.icalString);
     }
     catch(e){} 
-}
+});
 
 function registerFakeUMimTyp() {
     try {
@@ -447,7 +443,7 @@ function registerFakeUMimTyp() {
     }
 }
 
-function waitForInit(calendar) {
+function* waitForInit(calendar) {
     let deferred = Promise.defer();
     let caldavCheckSeverInfo = calendar.wrappedJSObject.completeCheckServerInfo;
     let wrapper = function(listener, error) {
@@ -462,16 +458,5 @@ function waitForInit(calendar) {
     calendar.wrappedJSObject.completeCheckServerInfo = wrapper;
     return deferred.promise;
 } 
-
-function promiseAddItem(item, calendar) {
-    let deferred = Promise.defer();
-    calendar.addItem(item, {
-        onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
-            dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
-            dump('\n\n##All Done##\n');    
-            deferred.resolve(aStatus);
-        }
-    });
-}
 
 

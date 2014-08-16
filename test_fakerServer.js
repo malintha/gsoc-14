@@ -138,7 +138,7 @@ fakeServer.prototype = {
         }
     },
 
-    putHandler: function(scope,request,response){
+    putHandler: Task.async(function*(scope,request, response) {
         let matchheader;
         let is = request.bodyInputStream;
         let body = NetUtil.readInputStreamToString(is, is.available(), {
@@ -156,12 +156,14 @@ fakeServer.prototype = {
         //create resource in server calendar
         if(request.method=="PUT" && matchheader=="*" && body){
             let tempServerItem = createEventFromIcalString(body);
- /*           //trying async:
+            //trying async:
             let pstor = cal.async.promisifyCalendar(scope.storage);
             yield pstor.addItem(tempServerItem);
             dump('\n\n###Item added successfully on storage calendar');
             try {
                 //setting meta data for the event as key/value pairs
+                let tempEtag = scope.generateTag();
+                let tempscheduleTag = scope.generateTag();
                 scope.storage.setMetaData(tempEtag,tempServerItem.id);
                 scope.storage.setMetaData(tempscheduleTag,tempServerItem.id);
                 scope.storage.setMetaData('eTag'+tempServerItem.id,tempEtag);
@@ -173,8 +175,8 @@ fakeServer.prototype = {
             }
             catch(e){
                 dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
-            }*/
-            scope.storage.addItem(tempServerItem, {
+            }
+/*            scope.storage.addItem(tempServerItem, {
                 onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
                     let tempEtag = scope.generateTag();
                     let tempscheduleTag = scope.generateTag();
@@ -194,7 +196,7 @@ fakeServer.prototype = {
                     }
                     dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
                 }
-            });
+            });*/
         }
         //modify request
         else {
@@ -227,7 +229,7 @@ fakeServer.prototype = {
                 }
             });
         }
-    },
+    }),
 
     getHandler: Task.async(function*(scope,request, response) {
         dump('\n\n###called getHandler');

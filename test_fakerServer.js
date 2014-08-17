@@ -36,9 +36,15 @@ fakeServer.prototype = {
         return this.httpServer.identity.primaryPort;
     },
 
+    init: function initCtag() {
+        let tempctag = this.generateTag();
+        this.storage.setMetaData('ctag',tempctag);
+        dump('\n\n###set new ctag :'+this.storage.getMetaData('ctag'));     
+    },
+
     //main handler for requests
     prefixHandler: function main_PrefixHandler(request, response) {
-        response.processAsync();     
+        response.processAsync();
         try {
             if(request.path == this._propertyBag.calendarCollection){
                 //Handles PROPFIND,REPORT methods
@@ -164,7 +170,12 @@ fakeServer.prototype = {
             yield pstor.addItem(tempServerItem);
             dump('\n\n###Item added successfully on storage');
             try {
-                //setting meta data for the event as key/value pairs
+                //setting meta data for the event and ctag as key/value pairs
+
+                let tempctag = this.storage.getMetaData('ctag');
+                this.storage.setMetaData('ctag',++tempctag);
+                dump('\n\n###changed ctag to '+this.storage.getMetaData('ctag'));
+
                 let tempEtag = this.generateTag();
                 let tempscheduleTag = this.generateTag();
                 if(tempscheduleTag == tempEtag) {
@@ -206,10 +217,14 @@ fakeServer.prototype = {
             this.storage.modifyItem(newItem,oldItem,{
                 onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
                     //change etag and schedule tag. Assume it is a major change by organizer to change the scheduleTag 
-                    dump('\n\n###calendar name '+aCalendar.name);
+                    let tempctag = aCalendar.getMetaData('ctag');
+                    dump('\n\n###current ctag '+tempctag);
+                    aCalendar.setMetaData('ctag',++tempctag);
+                    dump('\n\n###changed ctag to :'+aCalendar.getMetaData('ctag'));
                     let tempEtag = aCalendar.getMetaData('eTag'+changeItemId);
                     let tempscheduleTag = aCalendar.getMetaData('sTag'+changeItemId);
                     dump('\ntempEtag:'+tempEtag+'\ntempScheduletag'+tempscheduleTag);
+                    aCalendar.setMetaData('ctag',++tempctag);
                     aCalendar.setMetaData('eTag'+changeItemId,++tempEtag);
                     aCalendar.setMetaData('sTag'+changeItemId,++tempscheduleTag);
                     dump("\nItem successfully modified on calendar "+aCalendar.name);
@@ -287,62 +302,62 @@ function exampleServer() {
         itemId     :    '1b05e158-631a-445f-8c5a-5743b5a05169'                
     };
 
-    this._responseTemplates = {
-
-        _initPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
-        '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:b="http://calendarserver.org/ns/" xmlns:D="DAV:">\n' +
-        '   <D:response>\n' +
-        '    <D:href>' + this._propertyBag.calendarCollection + '</D:href>\n' +
-        '     <D:propstat>\n' +
-        '       <D:status>HTTP/1.1 200 OK</D:status>\n' +
-        '       <D:prop>\n' +
-        '         <D:resourcetype>\n' +
-        '           <D:collection/>\n' +
-        '           <calendar xmlns="urn:ietf:params:xml:ns:caldav"/>\n' +
-        '         </D:resourcetype>\n' +
-        '         <D:owner xmlns:D="DAV:">\n' +
-        '           <D:href>' + this._propertyBag.userPrincipalHref + '</D:href>\n' +
-        '         </D:owner>\n' +
-        '         <D:current-user-principal xmlns:D="DAV:">\n' +
-        '           <D:href>' + this._propertyBag.userPrincipalHref + '</D:href>\n' +
-        '         </D:current-user-principal>\n' +
-        '         <n1:supported-calendar-component-set xmlns:n1="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
-        '            <n1:comp name="' + this._propertyBag.supportedComps[0] + '"/>\n'+
-        '            <n1:comp name="' + this._propertyBag.supportedComps[1] + '"/>\n' +
-        '         </n1:supported-calendar-component-set>\n' +
-        '         <b:getctag>' + this._propertyBag.ctag + '</b:getctag>\n' +
-        '       </D:prop>\n' +
-        '     </D:propstat>\n' +
-        '   </D:response>\n' +
-        ' </D:multistatus>',
-
-        _principalPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
-        '   <D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
-        '       <D:response>\n' +
-        '    <D:href>' + this._propertyBag.calendarCollection + '</D:href>\n' +
-        '          <D:propstat>\n' +
-        '             <D:status>HTTP/1.1 200 OK</D:status>\n' +
-        '             <D:prop>\n' +
-        '             <a:calendar-home-set>\n' +
-        '                <D:href xmlns:D="DAV:">'+this._propertyBag.calendarHomeSetset+'</D:href>\n' +
-        '             </a:calendar-home-set>\n' +
-        '             <a:schedule-inbox-URL>\n' +
-        '                <D:href xmlns:D="DAV:">'+this._propertyBag.scheduleOutboxURL+'</D:href>\n' +
-        '             </a:schedule-inbox-URL>\n' +
-        '             <a:schedule-outbox-URL>\n' +
-        '                <D:href xmlns:D="DAV:">'+this._propertyBag.scheduleOutboxURL+'</D:href>\n' +
-        '             </a:schedule-outbox-URL>\n' +
-        '             <a:calendar-user-address-set>\n'+
-        '                <D:href xmlns:D="DAV:">mailto:'+this._propertyBag.userAddressSet[0]+'</D:href>\n'+
-        '                <D:href xmlns:D="DAV:">mailto:'+this._propertyBag.userAddressSet[1]+'</D:href>\n'+
-        '             </a:calendar-user-address-set>\n' +
-        '             </D:prop>\n' +
-        '          </D:propstat>\n' +
-        '       </D:response>\n' +
-        '   </D:multistatus>'     
-    };
+    this._responseTemplates = {};
     
     this.initResponses = function(){
+
+        this._responseTemplates._initPropfind = '<?xml version="1.0" encoding="UTF-8"?>\n'+
+            '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:b="http://calendarserver.org/ns/" xmlns:D="DAV:">\n' +
+            '   <D:response>\n' +
+            '    <D:href>' + this._propertyBag.calendarCollection + '</D:href>\n' +
+            '     <D:propstat>\n' +
+            '       <D:status>HTTP/1.1 200 OK</D:status>\n' +
+            '       <D:prop>\n' +
+            '         <D:resourcetype>\n' +
+            '           <D:collection/>\n' +
+            '           <calendar xmlns="urn:ietf:params:xml:ns:caldav"/>\n' +
+            '         </D:resourcetype>\n' +
+            '         <D:owner xmlns:D="DAV:">\n' +
+            '           <D:href>' + this._propertyBag.userPrincipalHref + '</D:href>\n' +
+            '         </D:owner>\n' +
+            '         <D:current-user-principal xmlns:D="DAV:">\n' +
+            '           <D:href>' + this._propertyBag.userPrincipalHref + '</D:href>\n' +
+            '         </D:current-user-principal>\n' +
+            '         <n1:supported-calendar-component-set xmlns:n1="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
+            '            <n1:comp name="' + this._propertyBag.supportedComps[0] + '"/>\n'+
+            '            <n1:comp name="' + this._propertyBag.supportedComps[1] + '"/>\n' +
+            '         </n1:supported-calendar-component-set>\n' +
+            '         <b:getctag>' + this.storage.getMetaData('ctag') + '</b:getctag>\n' +
+            '       </D:prop>\n' +
+            '     </D:propstat>\n' +
+            '   </D:response>\n' +
+            ' </D:multistatus>\n';
+
+        this._responseTemplates._principalPropfind = '<?xml version="1.0" encoding="UTF-8"?>\n'+
+            '   <D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
+            '       <D:response>\n' +
+            '    <D:href>' + this._propertyBag.calendarCollection + '</D:href>\n' +
+            '          <D:propstat>\n' +
+            '             <D:status>HTTP/1.1 200 OK</D:status>\n' +
+            '             <D:prop>\n' +
+            '             <a:calendar-home-set>\n' +
+            '                <D:href xmlns:D="DAV:">'+this._propertyBag.calendarHomeSetset+'</D:href>\n' +
+            '             </a:calendar-home-set>\n' +
+            '             <a:schedule-inbox-URL>\n' +
+            '                <D:href xmlns:D="DAV:">'+this._propertyBag.scheduleOutboxURL+'</D:href>\n' +
+            '             </a:schedule-inbox-URL>\n' +
+            '             <a:schedule-outbox-URL>\n' +
+            '                <D:href xmlns:D="DAV:">'+this._propertyBag.scheduleOutboxURL+'</D:href>\n' +
+            '             </a:schedule-outbox-URL>\n' +
+            '             <a:calendar-user-address-set>\n'+
+            '                <D:href xmlns:D="DAV:">mailto:'+this._propertyBag.userAddressSet[0]+'</D:href>\n'+
+            '                <D:href xmlns:D="DAV:">mailto:'+this._propertyBag.userAddressSet[1]+'</D:href>\n'+
+            '             </a:calendar-user-address-set>\n' +
+            '             </D:prop>\n' +
+            '          </D:propstat>\n' +
+            '       </D:response>\n' +
+            '   </D:multistatus>\n';
+
         this._responseTemplates._reportPropfind = '<?xml version="1.0" encoding="UTF-8"?>\n'+
             '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
             '     <D:response>\n'+
@@ -365,13 +380,13 @@ function exampleServer() {
             '         <D:propstat>\n'+
             '           <D:prop>\n'+
             '             <D:getetag>"'+this.storage.getMetaData('eTag1b05e158-631a-445f-8c5a-5743b5a05169')+'"</D:getetag>\n'+
-            '             <C:schedule-tag>"'+this.storage.getMetaData('eTag1b05e158-631a-445f-8c5a-5743b5a05169')+'"</C:schedule-tag>\n'+
+            '             <C:schedule-tag>"'+this.storage.getMetaData('sTag1b05e158-631a-445f-8c5a-5743b5a05169')+'"</C:schedule-tag>\n'+
             '             <C:calendar-data>'+this.getItemString('1b05e158-631a-445f-8c5a-5743b5a05169',this.storage)+'</C:calendar-data>\n'+
             '           </D:prop>\n'+
             '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
             '         </D:propstat>\n'+
             '     </D:response>\n'+
-            '   </D:multistatus>\n'
+            '   </D:multistatus>\n';
     };
 }
 
@@ -389,6 +404,7 @@ function router(request,response){
 //Start Client/Server model
 function run_test() {
     dump("### Server ");
+    exampleServerObj.init();
     do_get_profile();
     registerFakeUMimTyp();
     do_register_cleanup(() => exampleServerObj.httpServer.stop(() => {}));
@@ -426,6 +442,10 @@ add_task(function* test_doFakeServer(){
         dump('\n###modified Item\n'+mItem.icalString);
         do_check_eq(newItem.title,mItem.title);
         do_check_eq(newItem.id,mItem.id);
+        //clear metaData
+        exampleServerObj.storage.deleteMetaData('ctag');
+        exampleServerObj.storage.deleteMetaData('eTag1b05e158-631a-445f-8c5a-5743b5a05169');
+        exampleServerObj.storage.deleteMetaData('sTag1b05e158-631a-445f-8c5a-5743b5a05169');
     }
     catch(e){
         dump('\n\n#### EEE: ' + e + e.fileName + e.lineNumber + '\n');

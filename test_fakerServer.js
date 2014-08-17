@@ -36,30 +36,31 @@ fakeServer.prototype = {
         return this.httpServer.identity.primaryPort;
     },
 
+    //main handler for requests
     prefixHandler: function main_PrefixHandler(request, response) {
         response.processAsync();     
         try {
             if(request.path == this._propertyBag.calendarCollection){
                 //Handles PROPFIND,REPORT methods
                 dump('###got initPropfind');
-                fakeServer.prototype.initPropfind(this,request,response);
+                this.initPropfind(request,response);
             }
             else if (request.path == this._propertyBag.calendarHomeSetset){
                 //Handles OPTIONS method
-                fakeServer.prototype.calendarHandler(this,request,response);
+                this.calendarHandler(request,response);
             }
             else if(request.path == this._propertyBag.userPrincipalHref){
                 //Handles PROPFIND requests to user set
-                fakeServer.prototype.principalHandler(this,request,response);
+                this.principalHandler(request,response);
             }
             else {
                 //PUT requests to scheduleInboxURL/event.ics
                 if(request.method=='PUT'){
-                    fakeServer.prototype.putHandler(this,request,response);
+                    this.putHandler(request,response);
                 }
                 else if(request.method == 'GET'){
                     //GET requests to scheduleInboxURL/event.ics
-                    fakeServer.prototype.getHandler(this,request,response)
+                    this.getHandler(request,response)
                 }
                 else {
                     dump("###Recieved unidentified request : "+request.path+"\n");
@@ -72,7 +73,8 @@ fakeServer.prototype = {
         }
     },
 
-    initPropfind: function initPropfind(scope,request,response) {
+    initPropfind: function initPropfind(request,response) {
+        let scope = this;
         dump('##calledInitPropFind');
         let is = request.bodyInputStream;
         let body = NetUtil.readInputStreamToString(is, is.available(), {
@@ -83,19 +85,19 @@ fakeServer.prototype = {
             if (request.method == 'PROPFIND' && body.indexOf('current-user-prin') > -1){
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
-                response.write(scope._responseTemplates._initPropfind);
+                response.write(this._responseTemplates._initPropfind);
                 response.finish();
             }
             else if (request.method == 'PROPFIND' && body.indexOf('getetag') > -1) {
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
-                response.write(scope._responseTemplates._calDataPropfind);
+                response.write(this._responseTemplates._calDataPropfind);
                 response.finish();
             }
             else if (request.method == 'REPORT') {
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
-                response.write(scope._responseTemplates._reportPropfind);
+                response.write(this._responseTemplates._reportPropfind);
                 response.finish();
             }
             else {
@@ -109,7 +111,7 @@ fakeServer.prototype = {
         }
     },
 
-    calendarHandler: function calendarHandler(scope,request,response) {
+    calendarHandler: function calendarHandler(request,response) {
         try {
             if (request.method == "OPTIONS") {
                 response.setStatusLine(request.httpVersion, 200, "OK");
@@ -126,11 +128,11 @@ fakeServer.prototype = {
         }
     },
 
-    principalHandler: function principalHandler(scope,request,response) {
+    principalHandler: function principalHandler(request,response) {
         if (request.method == "PROPFIND") {
             response.setStatusLine(request.httpVersion, 207, "Multi-Status");
             response.setHeader('content-type', 'text/xml');
-            response.write(scope._responseTemplates._principalPropfind);
+            response.write(this._responseTemplates._principalPropfind);
             response.finish();
         } else {
             dump("### PRINCIPAL HANDLER GOT INVALID METHOD " + request.method + "\n");
@@ -138,9 +140,11 @@ fakeServer.prototype = {
         }
     },
 
-    putHandler: Task.async(function*(scope,request, response) {
+    putHandler: Task.async(function*(request, response) {
+        let scope = this;
         let matchheader;
         let is = request.bodyInputStream;
+        let pstor = cal.async.promisifyCalendar(this.storage);
         let body = NetUtil.readInputStreamToString(is, is.available(), {
             charset: 'UTF-8'
         });
@@ -157,72 +161,57 @@ fakeServer.prototype = {
         if(request.method=="PUT" && matchheader=="*" && body){
             let tempServerItem = createEventFromIcalString(body);
             //trying async:
-            let pstor = cal.async.promisifyCalendar(scope.storage);
             yield pstor.addItem(tempServerItem);
-            dump('\n\n###Item added successfully on storage calendar');
+            dump('\n\n###Item added successfully on storage');
             try {
                 //setting meta data for the event as key/value pairs
-                let tempEtag = scope.generateTag();
-                let tempscheduleTag = scope.generateTag();
-                scope.storage.setMetaData(tempEtag,tempServerItem.id);
-                scope.storage.setMetaData(tempscheduleTag,tempServerItem.id);
-                scope.storage.setMetaData('eTag'+tempServerItem.id,tempEtag);
-                scope.storage.setMetaData('sTag'+tempServerItem.id,tempscheduleTag);
-                dump('\n##etag for'+tempServerItem.id+'='+scope.storage.getMetaData('eTag'+tempServerItem.id));
-                dump('\n##UUID for'+tempscheduleTag+' = '+scope.storage.getMetaData(tempEtag));
+                let tempEtag = this.generateTag();
+                let tempscheduleTag = this.generateTag();
+                if(tempscheduleTag == tempEtag) {
+                    tempscheduleTag = this.generateTag();
+                }
+                this.storage.setMetaData(tempEtag,tempServerItem.id);
+                this.storage.setMetaData(tempscheduleTag,tempServerItem.id);
+                this.storage.setMetaData('eTag'+tempServerItem.id,tempEtag);
+                this.storage.setMetaData('sTag'+tempServerItem.id,tempscheduleTag);
+                dump('\n##etag for'+tempServerItem.id+'='+this.storage.getMetaData('eTag'+tempServerItem.id));
+                dump('\n##UUID for'+tempscheduleTag+' = '+this.storage.getMetaData(tempEtag));
                 response.setStatusLine(request.httpVersion, 201, "resource created");
                 response.finish();
             }
             catch(e){
                 dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
             }
-/*            scope.storage.addItem(tempServerItem, {
-                onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
-                    let tempEtag = scope.generateTag();
-                    let tempscheduleTag = scope.generateTag();
-                    try {
-                        //setting meta data for the event as key/value pairs
-                        scope.storage.setMetaData(tempEtag,tempServerItem.id);
-                        scope.storage.setMetaData(tempscheduleTag,tempServerItem.id);
-                        scope.storage.setMetaData('eTag'+tempServerItem.id,tempEtag);
-                        scope.storage.setMetaData('sTag'+tempServerItem.id,tempscheduleTag);
-                        dump('\n##etag for'+tempServerItem.id+'='+scope.storage.getMetaData('eTag'+tempServerItem.id));
-                        dump('\n##UUID for'+tempscheduleTag+' = '+scope.storage.getMetaData(tempEtag));
-                        response.setStatusLine(request.httpVersion, 201, "resource created");
-                        response.finish();
-                    }
-                    catch(e){
-                        dump("\n\n#### EEE: " + e + e.fileName + e.lineNumber +"\n");
-                    }
-                    dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
-                }
-            });*/
         }
         //modify request
         else {
             matchheader = matchheader.substring(1,matchheader.length-1);
             dump('\n##Modify request '+matchheader);
-            dump('\n##UUID for'+matchheader+' = '+scope.storage.getMetaData(matchheader));
+            dump('\n##UUID for'+matchheader+' = '+this.storage.getMetaData(matchheader));
             //get the corresponding ItemId to recieved header
-            let changeItemId = scope.storage.getMetaData(matchheader);
+            let changeItemId = this.storage.getMetaData(matchheader);
             let newItem = createEventFromIcalString(body);
             let oldItem = null;
-            dump('\n##Modify request1'+changeItemId);
-            scope.storage.getItem(changeItemId, {
+
+/*          oldItem = yield pstor.getItem(changeItemId);
+            dump('\n###oldItem:'+oldItem.icalString);*/
+
+            this.storage.getItem(changeItemId, {
                 onGetResult: function (cal, stat, type, detail, count, items) {
                     oldItem = items[0];
-                    dump('\n###oldItem'+oldItem.icalString);
                 },
                 onOperationComplete: function() {} 
             });
-            scope.storage.modifyItem(newItem,oldItem,{
+
+            this.storage.modifyItem(newItem,oldItem,{
                 onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
                     //change etag and schedule tag. Assume it is a major change by organizer to change the scheduleTag 
-                    let tempEtag = scope.storage.getMetaData('eTag'+changeItemId);
-                    let tempscheduleTag = scope.storage.getMetaData('sTag'+changeItemId);
+                    dump('\n\n###calendar name '+aCalendar.name);
+                    let tempEtag = aCalendar.getMetaData('eTag'+changeItemId);
+                    let tempscheduleTag = aCalendar.getMetaData('sTag'+changeItemId);
                     dump('\ntempEtag:'+tempEtag+'\ntempScheduletag'+tempscheduleTag);
-                    scope.storage.setMetaData('eTag'+changeItemId,++tempEtag);
-                    scope.storage.setMetaData('sTag'+changeItemId,++tempscheduleTag);
+                    aCalendar.setMetaData('eTag'+changeItemId,++tempEtag);
+                    aCalendar.setMetaData('sTag'+changeItemId,++tempscheduleTag);
                     dump("\nItem successfully modified on calendar "+aCalendar.name);
                     response.setStatusLine(request.httpVersion, 200, "resource changed");
                     response.finish();
@@ -231,12 +220,12 @@ fakeServer.prototype = {
         }
     }),
 
-    getHandler: Task.async(function*(scope,request, response) {
+    getHandler: Task.async(function*(request, response) {
         dump('\n\n###called getHandler');
         //get the itemID from request.path
-        let s = request.path.split(scope._propertyBag.scheduleInboxURL).pop();
+        let s = request.path.split(this._propertyBag.scheduleInboxURL).pop();
         let getItemId = s.split('.ics')[0];
-        let pstor = cal.async.promisifyCalendar(scope.storage);
+        let pstor = cal.async.promisifyCalendar(this.storage);
         let item = yield pstor.getItem(getItemId);
         dump("\n\n###retrieved Item"+item.icalString);
         response.setHeader('content-type', 'text/calendar');
@@ -273,11 +262,11 @@ fakeServer.prototype = {
 function exampleServer() {
     this._propertyBag = {
         name: 'example',
-        calendarCollection: '/calendar/collection/',
+        calendarCollection: '/calendar/events/',
         calendarHomeSetset: '/calendar/',
         scheduleInboxURL: '/calendar/inbox/',
         scheduleOutboxURL: '/calendar/outbox/',
-        userPrincipalHref: '/users/xpcshell/',
+        userPrincipalHref: '/calendar/user/',
         ctag: '123456',
         supportedComps: ['VEVENT',
                          'VTODO'
@@ -303,7 +292,7 @@ function exampleServer() {
         _initPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
         '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:b="http://calendarserver.org/ns/" xmlns:D="DAV:">\n' +
         '   <D:response>\n' +
-        '    <D:href>' + this._propertyBag.scheduleInboxURL + '</D:href>\n' +
+        '    <D:href>' + this._propertyBag.calendarCollection + '</D:href>\n' +
         '     <D:propstat>\n' +
         '       <D:status>HTTP/1.1 200 OK</D:status>\n' +
         '       <D:prop>\n' +
@@ -330,7 +319,7 @@ function exampleServer() {
         _principalPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
         '   <D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
         '       <D:response>\n' +
-        '          <D:href>/calendar/xpcshell/</D:href>\n' +
+        '    <D:href>' + this._propertyBag.calendarCollection + '</D:href>\n' +
         '          <D:propstat>\n' +
         '             <D:status>HTTP/1.1 200 OK</D:status>\n' +
         '             <D:prop>\n' +

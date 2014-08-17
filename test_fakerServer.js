@@ -409,13 +409,41 @@ add_task(function* test_doFakeServer(){
         let item = createEventFromIcalString(exampleServerObj._propertyBag.icalString);
         let pclient = cal.async.promisifyCalendar(clientCalendar);
         yield pclient.addItem(item);
+        //get added Item
+        let addedItem = null;
+        //getItem async call doesn't work
+        clientCalendar.getItem(item.id, {
+        onGetResult: function (cal, stat, type, detail, count, items) {
+            addedItem = items[0];
+            dump('\n\n###addedItem:'+addedItem.icalString);
+        },
+        onOperationComplete: function() {} 
+        });
+        do_check_eq(item.id,addedItem.id);
         let newItem = item.clone();
         newItem.title = "NewItemTitle";
         let mItem = yield pclient.modifyItem(newItem,item);
         dump('\n###modified Item\n'+mItem.icalString);
+        do_check_eq(newItem.title,mItem.title);
+        do_check_eq(newItem.id,mItem.id);
     }
-    catch(e){} 
+    catch(e){
+        dump('\n\n#### EEE: ' + e + e.fileName + e.lineNumber + '\n');
+    } 
 });
+
+function* promiseRetrieveItem(itemId,calendar) {
+     let deferred = Promise.defer();
+     calendar.getItem(itemId, {
+        onGetResult: function (cal, stat, type, detail, count, items) {
+            let addedItem = items[0];
+            dump('\n\n###addedItem:'+addedItem.icalString);
+            deferred.resolve();
+    },
+        onOperationComplete: function() {} 
+    });
+     return deferred.promise;
+}
 
 function registerFakeUMimTyp() {
     try {

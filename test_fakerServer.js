@@ -4,7 +4,6 @@
 Components.utils.import('resource://gre/modules/Promise.jsm');
 Components.utils.import('resource://testing-common/httpd.js');
 Components.utils.import('resource://gre/modules/NetUtil.jsm')
-// Components.utils.import('resource://gre/modules/CSPUtils.jsm');
 Components.utils.import('resource://calendar/modules/calUtils.jsm');
 Components.utils.import('resource://gre/modules/FileUtils.jsm');
 Components.utils.import('resource:///modules/Services.jsm');
@@ -29,7 +28,6 @@ function fakeServer() {
     this.storage.name = "serverStorageCalendar";
 }
 
-
 fakeServer.prototype = {
 
     getLocalPort: function get_LocalPort() {
@@ -39,7 +37,7 @@ fakeServer.prototype = {
     init: function initCtag() {
         let tempctag = this.generateTag();
         this.storage.setMetaData('ctag',tempctag);
-        dump('\n\n###set new ctag :'+this.storage.getMetaData('ctag'));     
+        dump('\n\n###set new ctag :'+this.storage.getMetaData('ctag'));
     },
 
     //main handler for requests
@@ -81,7 +79,6 @@ fakeServer.prototype = {
 
     initPropfind: function initPropfind(request,response) {
         let scope = this;
-        dump('##calledInitPropFind');
         let is = request.bodyInputStream;
         let body = NetUtil.readInputStreamToString(is, is.available(), {
             charset: 'UTF-8'
@@ -211,12 +208,12 @@ fakeServer.prototype = {
                 onGetResult: function (cal, stat, type, detail, count, items) {
                     oldItem = items[0];
                 },
-                onOperationComplete: function() {} 
+                onOperationComplete: function() {}
             });
 
             this.storage.modifyItem(newItem,oldItem,{
                 onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
-                    //change etag and schedule tag. Assume it is a major change by organizer to change the scheduleTag 
+                    //change etag and schedule tag. Assume it is a major change by organizer to change the scheduleTag
                     let tempctag = aCalendar.getMetaData('ctag');
                     dump('\n\n###current ctag '+tempctag);
                     aCalendar.setMetaData('ctag',++tempctag);
@@ -255,7 +252,7 @@ fakeServer.prototype = {
             onGetResult: function (cal, stat, type, detail, count, items) {
                 tempGetItemString = items[0].icalString
             },
-            onOperationComplete: function() {} 
+            onOperationComplete: function() {}
         });
         return tempGetItemString;
     },
@@ -266,7 +263,7 @@ fakeServer.prototype = {
         let possible = "0123456789";
         for(let i=0; i < 5; i++ )
             tag += possible.charAt(Math.floor(Math.random() * possible.length));
-        return tag;    
+        return tag;
     }
 
 };
@@ -299,11 +296,11 @@ function exampleServer() {
                         'ATTENDEE;CN=Attendee1 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee1@example.com\n'+
                         'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee2@example.com\n'+
                         'END:VEVENT\n',
-        itemId     :    '1b05e158-631a-445f-8c5a-5743b5a05169'                
+        itemId     :    '1b05e158-631a-445f-8c5a-5743b5a05169'
     };
 
     this._responseTemplates = {};
-    
+
     this.initResponses = function(){
 
         this._responseTemplates._initPropfind = '<?xml version="1.0" encoding="UTF-8"?>\n'+
@@ -433,7 +430,7 @@ add_task(function* test_doFakeServer(){
             addedItem = items[0];
             dump('\n\n###addedItem:'+addedItem.icalString);
         },
-        onOperationComplete: function() {} 
+        onOperationComplete: function() {}
         });
         do_check_eq(item.id,addedItem.id);
         let newItem = item.clone();
@@ -449,7 +446,7 @@ add_task(function* test_doFakeServer(){
     }
     catch(e){
         dump('\n\n#### EEE: ' + e + e.fileName + e.lineNumber + '\n');
-    } 
+    }
 });
 
 function* promiseRetrieveItem(itemId,calendar) {
@@ -460,7 +457,7 @@ function* promiseRetrieveItem(itemId,calendar) {
             dump('\n\n###addedItem:'+addedItem.icalString);
             deferred.resolve();
     },
-        onOperationComplete: function() {} 
+        onOperationComplete: function() {}
     });
      return deferred.promise;
 }
@@ -496,6 +493,6 @@ function* waitForInit(calendar) {
     };
     calendar.wrappedJSObject.completeCheckServerInfo = wrapper;
     return deferred.promise;
-} 
+}
 
 

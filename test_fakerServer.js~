@@ -4,10 +4,13 @@
 Components.utils.import('resource://gre/modules/Promise.jsm');
 Components.utils.import('resource://testing-common/httpd.js');
 Components.utils.import('resource://gre/modules/NetUtil.jsm')
-Components.utils.import('resource://gre/modules/CSPUtils.jsm');
+// Components.utils.import('resource://gre/modules/CSPUtils.jsm');
 Components.utils.import('resource://calendar/modules/calUtils.jsm');
 Components.utils.import('resource://gre/modules/FileUtils.jsm');
 Components.utils.import('resource:///modules/Services.jsm');
+Components.utils.import("resource://calendar/modules/calAsyncUtils.jsm");
+Components.utils.import("resource://gre/modules/Task.jsm");
+
 Services.prefs.setBoolPref('javascript.options.showInConsole', true);
 Services.prefs.setBoolPref('browser.dom.window.dump.enabled', true);
 Services.prefs.setBoolPref('calendar.debug.log', true);
@@ -33,29 +36,37 @@ fakeServer.prototype = {
         return this.httpServer.identity.primaryPort;
     },
 
+    init: function initCtag() {
+        let tempctag = this.generateTag();
+        this.storage.setMetaData('ctag',tempctag);
+        dump('\n\n###set new ctag :'+this.storage.getMetaData('ctag'));
+    },
+
+    //main handler for requests
     prefixHandler: function main_PrefixHandler(request, response) {
-        response.processAsync();     
+        response.processAsync();
         try {
-            if(request.path == this._propertyBag.scheduleInboxURL){
+            if(request.path == this._propertyBag.calendarCollection){
                 //Handles PROPFIND,REPORT methods
-                fakeServer.prototype.initPropfind(this,request,response);
+                dump('###got initPropfind');
+                this.initPropfind(request,response);
             }
             else if (request.path == this._propertyBag.calendarHomeSetset){
                 //Handles OPTIONS method
-                fakeServer.prototype.calendarHandler(this,request,response);
+                this.calendarHandler(request,response);
             }
             else if(request.path == this._propertyBag.userPrincipalHref){
                 //Handles PROPFIND requests to user set
-                fakeServer.prototype.principalHandler(this,request,response);
+                this.principalHandler(request,response);
             }
             else {
                 //PUT requests to scheduleInboxURL/event.ics
                 if(request.method=='PUT'){
-                    fakeServer.prototype.putHandler(this,request,response);
+                    this.putHandler(request,response);
                 }
                 else if(request.method == 'GET'){
                     //GET requests to scheduleInboxURL/event.ics
-                    fakeServer.prototype.getHandler(this,request,response)
+                    this.getHandler(request,response)
                 }
                 else {
                     dump("###Recieved unidentified request : "+request.path+"\n");
@@ -68,7 +79,9 @@ fakeServer.prototype = {
         }
     },
 
-    initPropfind: function initPropfind(scope, request,response) {
+    initPropfind: function initPropfind(request,response) {
+        let scope = this;
+        dump('##calledInitPropFind');
         let is = request.bodyInputStream;
         let body = NetUtil.readInputStreamToString(is, is.available(), {
             charset: 'UTF-8'
@@ -78,21 +91,19 @@ fakeServer.prototype = {
             if (request.method == 'PROPFIND' && body.indexOf('current-user-prin') > -1){
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
-                response.write(scope._responseTemplates._initPropfind);
+                response.write(this._responseTemplates._initPropfind);
                 response.finish();
             }
             else if (request.method == 'PROPFIND' && body.indexOf('getetag') > -1) {
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
-                response.write(scope._responseTemplates._calDataPropfind);
+                response.write(this._responseTemplates._calDataPropfind);
                 response.finish();
             }
             else if (request.method == 'REPORT') {
                 response.setStatusLine(request.httpVersion, 207, 'Multi-Status');
                 response.setHeader('content-type', 'text/xml');
-                dump('***##name'+scope.storage.name);
-                dump('\n\n##testreport:\n'+scope._responseTemplates._reportPropfind);
-                response.write(scope._responseTemplates._reportPropfind);
+                response.write(this._responseTemplates._reportPropfind);
                 response.finish();
             }
             else {
@@ -106,7 +117,7 @@ fakeServer.prototype = {
         }
     },
 
-    calendarHandler: function calendarHandler(scope,request,response) {
+    calendarHandler: function calendarHandler(request,response) {
         try {
             if (request.method == "OPTIONS") {
                 response.setStatusLine(request.httpVersion, 200, "OK");
@@ -123,11 +134,11 @@ fakeServer.prototype = {
         }
     },
 
-    principalHandler: function principalHandler(scope,request,response) {
+    principalHandler: function principalHandler(request,response) {
         if (request.method == "PROPFIND") {
             response.setStatusLine(request.httpVersion, 207, "Multi-Status");
             response.setHeader('content-type', 'text/xml');
-            response.write(scope._responseTemplates._principalPropfind);
+            response.write(this._responseTemplates._principalPropfind);
             response.finish();
         } else {
             dump("### PRINCIPAL HANDLER GOT INVALID METHOD " + request.method + "\n");
@@ -135,9 +146,11 @@ fakeServer.prototype = {
         }
     },
 
-    putHandler: function(scope,request,response){
+    putHandler: Task.async(function*(request, response) {
+        let scope = this;
         let matchheader;
         let is = request.bodyInputStream;
+        let pstor = cal.async.promisifyCalendar(this.storage);
         let body = NetUtil.readInputStreamToString(is, is.available(), {
             charset: 'UTF-8'
         });
@@ -147,25 +160,33 @@ fakeServer.prototype = {
         }
         //Modify PUT request
         else if(request.hasHeader("If-Schedule-Tag-Match")){
-            dump("##If-Schedule-Tag-Match");
             matchheader = request.getHeader("If-Schedule-Tag-Match");
+            dump("\n##If-Schedule-Tag-Match"+matchheader+'\n'+body);
         }
         //create resource in server calendar
         if(request.method=="PUT" && matchheader=="*" && body){
             let tempServerItem = createEventFromIcalString(body);
-            scope.storage.addItem(tempServerItem, {
-                onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
-                    dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
-                }
-            });
-            let tempEtag = scope.generateTag();
-            let tempscheduleTag = scope.generateTag();
+            //trying async:
+            yield pstor.addItem(tempServerItem);
+            dump('\n\n###Item added successfully on storage');
             try {
-                //setting meta data for the event as key/value pairs
-                scope.storage.setMetaData(tempEtag,tempServerItem.id);
-                scope.storage.setMetaData(tempscheduleTag,tempServerItem.id);
-                scope.storage.setMetaData('eTag'+tempServerItem.id,tempEtag);
-                scope.storage.setMetaData('sTag'+tempServerItem.id,tempscheduleTag);
+                //setting meta data for the event and ctag as key/value pairs
+
+                let tempctag = this.storage.getMetaData('ctag');
+                this.storage.setMetaData('ctag',++tempctag);
+                dump('\n\n###changed ctag to '+this.storage.getMetaData('ctag'));
+
+                let tempEtag = this.generateTag();
+                let tempscheduleTag = this.generateTag();
+                if(tempscheduleTag == tempEtag) {
+                    tempscheduleTag = this.generateTag();
+                }
+                this.storage.setMetaData(tempEtag,tempServerItem.id);
+                this.storage.setMetaData(tempscheduleTag,tempServerItem.id);
+                this.storage.setMetaData('eTag'+tempServerItem.id,tempEtag);
+                this.storage.setMetaData('sTag'+tempServerItem.id,tempscheduleTag);
+                dump('\n##etag for'+tempServerItem.id+'='+this.storage.getMetaData('eTag'+tempServerItem.id));
+                dump('\n##UUID for'+tempscheduleTag+' = '+this.storage.getMetaData(tempEtag));
                 response.setStatusLine(request.httpVersion, 201, "resource created");
                 response.finish();
             }
@@ -174,47 +195,58 @@ fakeServer.prototype = {
             }
         }
         //modify request
-        else if(request.method=='PUT' && matchheader>0 && body){   
+        else {
+            matchheader = matchheader.substring(1,matchheader.length-1);
+            dump('\n##Modify request '+matchheader);
+            dump('\n##UUID for'+matchheader+' = '+this.storage.getMetaData(matchheader));
             //get the corresponding ItemId to recieved header
-            let changeItemId = scope.storage.getMetaData(matchheader);
+            let changeItemId = this.storage.getMetaData(matchheader);
             let newItem = createEventFromIcalString(body);
             let oldItem = null;
 
-            scope.storage.getItem(changeItemId, {
+/*          oldItem = yield pstor.getItem(changeItemId);
+            dump('\n###oldItem:'+oldItem.icalString);*/
+
+            this.storage.getItem(changeItemId, {
                 onGetResult: function (cal, stat, type, detail, count, items) {
                     oldItem = items[0];
                 },
-                onOperationComplete: function() {} 
+                onOperationComplete: function() {}
             });
 
-            scope.storage.modifyItem(newItem,oldItem,{
+            this.storage.modifyItem(newItem,oldItem,{
                 onOperationComplete: function checkModifiedItem(aCalendar, aStatus, aOperationType, aId, aitem) {
-                    //change etag and schedule tag. Assume it is a major change by organizer to change the scheduleTag 
-                    scope.storage.setMetaData('eTag'+changeItemId,++scope.storage.getMetaData('eTag'+changeItemId));
-                    scope.storage.setMetaData('eTag'+changeItemId,++scope.storage.getMetaData('sTag'+changeItemId));
+                    //change etag and schedule tag. Assume it is a major change by organizer to change the scheduleTag
+                    let tempctag = aCalendar.getMetaData('ctag');
+                    dump('\n\n###current ctag '+tempctag);
+                    aCalendar.setMetaData('ctag',++tempctag);
+                    dump('\n\n###changed ctag to :'+aCalendar.getMetaData('ctag'));
+                    let tempEtag = aCalendar.getMetaData('eTag'+changeItemId);
+                    let tempscheduleTag = aCalendar.getMetaData('sTag'+changeItemId);
+                    dump('\ntempEtag:'+tempEtag+'\ntempScheduletag'+tempscheduleTag);
+                    aCalendar.setMetaData('ctag',++tempctag);
+                    aCalendar.setMetaData('eTag'+changeItemId,++tempEtag);
+                    aCalendar.setMetaData('sTag'+changeItemId,++tempscheduleTag);
                     dump("\nItem successfully modified on calendar "+aCalendar.name);
                     response.setStatusLine(request.httpVersion, 200, "resource changed");
                     response.finish();
                 }
             });
         }
-    },
+    }),
 
-    getHandler: function(scope,request,response){
+    getHandler: Task.async(function*(request, response) {
+        dump('\n\n###called getHandler');
         //get the itemID from request.path
-        let s = request.path.split(scope._propertyBag.scheduleInboxURL).pop();
+        let s = request.path.split(this._propertyBag.scheduleInboxURL).pop();
         let getItemId = s.split('.ics')[0];
-        let tempGetItem = null;
-        scope.storage.getItem(getItemId, {
-            onGetResult: function (cal, stat, type, detail, count, items) {
-                tempGetItem = items[0];
-            },
-            onOperationComplete: function() {} 
-        });
+        let pstor = cal.async.promisifyCalendar(this.storage);
+        let item = yield pstor.getItem(getItemId);
+        dump("\n\n###retrieved Item"+item.icalString);
         response.setHeader('content-type', 'text/calendar');
-        response.write(tempGetItem.icalString);
+        response.write(item.icalString);
         response.finish();
-    },
+    }),
 
     getItemString: function(itemId,calendar) {
         //get a icalString for given Item Id
@@ -223,7 +255,7 @@ fakeServer.prototype = {
             onGetResult: function (cal, stat, type, detail, count, items) {
                 tempGetItemString = items[0].icalString
             },
-            onOperationComplete: function() {} 
+            onOperationComplete: function() {}
         });
         return tempGetItemString;
     },
@@ -234,7 +266,7 @@ fakeServer.prototype = {
         let possible = "0123456789";
         for(let i=0; i < 5; i++ )
             tag += possible.charAt(Math.floor(Math.random() * possible.length));
-        return tag;    
+        return tag;
     }
 
 };
@@ -245,10 +277,11 @@ fakeServer.prototype = {
 function exampleServer() {
     this._propertyBag = {
         name: 'example',
+        calendarCollection: '/calendar/events/',
         calendarHomeSetset: '/calendar/',
-        scheduleInboxURL: '/calendar/xpcshell/',
-        scheduleOutboxURL: '/calendar/xpcshell/',
-        userPrincipalHref: '/users/xpcshell/',
+        scheduleInboxURL: '/calendar/inbox/',
+        scheduleOutboxURL: '/calendar/outbox/',
+        userPrincipalHref: '/calendar/user/',
         ctag: '123456',
         supportedComps: ['VEVENT',
                          'VTODO'
@@ -266,65 +299,65 @@ function exampleServer() {
                         'ATTENDEE;CN=Attendee1 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee1@example.com\n'+
                         'ATTENDEE;CN=Attendee2 Name;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;X-NUM-GUESTS=0:mailto:attendee2@example.com\n'+
                         'END:VEVENT\n',
-        itemId     :    '1b05e158-631a-445f-8c5a-5743b5a05169'                
+        itemId     :    '1b05e158-631a-445f-8c5a-5743b5a05169'
     };
 
-    this._responseTemplates = {
+    this._responseTemplates = {};
 
-        _initPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
-        '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:b="http://calendarserver.org/ns/" xmlns:D="DAV:">\n' +
-        '   <D:response>\n' +
-        '    <D:href>' + this._propertyBag.scheduleInboxURL + '</D:href>\n' +
-        '     <D:propstat>\n' +
-        '       <D:status>HTTP/1.1 200 OK</D:status>\n' +
-        '       <D:prop>\n' +
-        '         <D:resourcetype>\n' +
-        '           <D:collection/>\n' +
-        '           <calendar xmlns="urn:ietf:params:xml:ns:caldav"/>\n' +
-        '         </D:resourcetype>\n' +
-        '         <D:owner xmlns:D="DAV:">\n' +
-        '           <D:href>' + this._propertyBag.userPrincipalHref + '</D:href>\n' +
-        '         </D:owner>\n' +
-        '         <D:current-user-principal xmlns:D="DAV:">\n' +
-        '           <D:href>' + this._propertyBag.userPrincipalHref + '</D:href>\n' +
-        '         </D:current-user-principal>\n' +
-        '         <n1:supported-calendar-component-set xmlns:n1="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
-        '            <n1:comp name="' + this._propertyBag.supportedComps[0] + '"/>\n'+
-        '            <n1:comp name="' + this._propertyBag.supportedComps[1] + '"/>\n' +
-        '         </n1:supported-calendar-component-set>\n' +
-        '         <b:getctag>' + this._propertyBag.ctag + '</b:getctag>\n' +
-        '       </D:prop>\n' +
-        '     </D:propstat>\n' +
-        '   </D:response>\n' +
-        ' </D:multistatus>',
-
-        _principalPropfind: '<?xml version="1.0" encoding="UTF-8"?>\n'+
-        '   <D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
-        '       <D:response>\n' +
-        '          <D:href>/calendar/xpcshell/</D:href>\n' +
-        '          <D:propstat>\n' +
-        '             <D:status>HTTP/1.1 200 OK</D:status>\n' +
-        '             <D:prop>\n' +
-        '             <a:calendar-home-set>\n' +
-        '                <D:href xmlns:D="DAV:">'+this._propertyBag.calendarHomeSetset+'</D:href>\n' +
-        '             </a:calendar-home-set>\n' +
-        '             <a:schedule-inbox-URL>\n' +
-        '                <D:href xmlns:D="DAV:">'+this._propertyBag.scheduleOutboxURL+'</D:href>\n' +
-        '             </a:schedule-inbox-URL>\n' +
-        '             <a:schedule-outbox-URL>\n' +
-        '                <D:href xmlns:D="DAV:">'+this._propertyBag.scheduleOutboxURL+'</D:href>\n' +
-        '             </a:schedule-outbox-URL>\n' +
-        '             <a:calendar-user-address-set>\n'+
-        '                <D:href xmlns:D="DAV:">mailto:'+this._propertyBag.userAddressSet[0]+'</D:href>\n'+
-        '                <D:href xmlns:D="DAV:">mailto:'+this._propertyBag.userAddressSet[1]+'</D:href>\n'+
-        '             </a:calendar-user-address-set>\n' +
-        '             </D:prop>\n' +
-        '          </D:propstat>\n' +
-        '       </D:response>\n' +
-        '   </D:multistatus>'     
-    };
-    
     this.initResponses = function(){
+
+        this._responseTemplates._initPropfind = '<?xml version="1.0" encoding="UTF-8"?>\n'+
+            '<D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:b="http://calendarserver.org/ns/" xmlns:D="DAV:">\n' +
+            '   <D:response>\n' +
+            '    <D:href>' + this._propertyBag.calendarCollection + '</D:href>\n' +
+            '     <D:propstat>\n' +
+            '       <D:status>HTTP/1.1 200 OK</D:status>\n' +
+            '       <D:prop>\n' +
+            '         <D:resourcetype>\n' +
+            '           <D:collection/>\n' +
+            '           <calendar xmlns="urn:ietf:params:xml:ns:caldav"/>\n' +
+            '         </D:resourcetype>\n' +
+            '         <D:owner xmlns:D="DAV:">\n' +
+            '           <D:href>' + this._propertyBag.userPrincipalHref + '</D:href>\n' +
+            '         </D:owner>\n' +
+            '         <D:current-user-principal xmlns:D="DAV:">\n' +
+            '           <D:href>' + this._propertyBag.userPrincipalHref + '</D:href>\n' +
+            '         </D:current-user-principal>\n' +
+            '         <n1:supported-calendar-component-set xmlns:n1="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
+            '            <n1:comp name="' + this._propertyBag.supportedComps[0] + '"/>\n'+
+            '            <n1:comp name="' + this._propertyBag.supportedComps[1] + '"/>\n' +
+            '         </n1:supported-calendar-component-set>\n' +
+            '         <b:getctag>' + this.storage.getMetaData('ctag') + '</b:getctag>\n' +
+            '       </D:prop>\n' +
+            '     </D:propstat>\n' +
+            '   </D:response>\n' +
+            ' </D:multistatus>\n';
+
+        this._responseTemplates._principalPropfind = '<?xml version="1.0" encoding="UTF-8"?>\n'+
+            '   <D:multistatus xmlns:a="urn:ietf:params:xml:ns:caldav" xmlns:D="DAV:">\n' +
+            '       <D:response>\n' +
+            '    <D:href>' + this._propertyBag.calendarCollection + '</D:href>\n' +
+            '          <D:propstat>\n' +
+            '             <D:status>HTTP/1.1 200 OK</D:status>\n' +
+            '             <D:prop>\n' +
+            '             <a:calendar-home-set>\n' +
+            '                <D:href xmlns:D="DAV:">'+this._propertyBag.calendarHomeSetset+'</D:href>\n' +
+            '             </a:calendar-home-set>\n' +
+            '             <a:schedule-inbox-URL>\n' +
+            '                <D:href xmlns:D="DAV:">'+this._propertyBag.scheduleOutboxURL+'</D:href>\n' +
+            '             </a:schedule-inbox-URL>\n' +
+            '             <a:schedule-outbox-URL>\n' +
+            '                <D:href xmlns:D="DAV:">'+this._propertyBag.scheduleOutboxURL+'</D:href>\n' +
+            '             </a:schedule-outbox-URL>\n' +
+            '             <a:calendar-user-address-set>\n'+
+            '                <D:href xmlns:D="DAV:">mailto:'+this._propertyBag.userAddressSet[0]+'</D:href>\n'+
+            '                <D:href xmlns:D="DAV:">mailto:'+this._propertyBag.userAddressSet[1]+'</D:href>\n'+
+            '             </a:calendar-user-address-set>\n' +
+            '             </D:prop>\n' +
+            '          </D:propstat>\n' +
+            '       </D:response>\n' +
+            '   </D:multistatus>\n';
+
         this._responseTemplates._reportPropfind = '<?xml version="1.0" encoding="UTF-8"?>\n'+
             '   <D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">\n'+
             '     <D:response>\n'+
@@ -353,7 +386,7 @@ function exampleServer() {
             '           <D:status>HTTP/1.1 200 OK</D:status>\n'+
             '         </D:propstat>\n'+
             '     </D:response>\n'+
-            '   </D:multistatus>\n'
+            '   </D:multistatus>\n';
     };
 }
 
@@ -370,7 +403,8 @@ function router(request,response){
 
 //Start Client/Server model
 function run_test() {
-    dump("### Server "+exampleServerObj.id+" started on "+exampleServerObj.getLocalPort());
+    dump("### Server ");
+    exampleServerObj.init();
     do_get_profile();
     registerFakeUMimTyp();
     do_register_cleanup(() => exampleServerObj.httpServer.stop(() => {}));
@@ -379,19 +413,56 @@ function run_test() {
     }});
 }
 
-add_task(test_doFakeServer);
-
-function test_doFakeServer(){
+add_task(function* test_doFakeServer(){
     //create client calendar
-    let calmgr = cal.getCalendarManager();
-    let calendarURL = 'http://localhost:'+exampleServerObj.getLocalPort()+exampleServerObj._propertyBag.scheduleInboxURL;
-    let clientCalendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
-    clientCalendar.name="clientCalendar";
-    calmgr.registerCalendar(clientCalendar);
-    yield waitForInit(clientCalendar);
-    let item = createEventFromIcalString(exampleServerObj._propertyBag.icalString);
-    yield promiseAddItem(item,clientCalendar);
-    dump('\n\nAll Done');
+    try{
+        let calmgr = cal.getCalendarManager();
+        let calendarURL = 'http://localhost:'+exampleServerObj.getLocalPort()+exampleServerObj._propertyBag.calendarCollection;
+        let clientCalendar = calmgr.createCalendar("caldav", Services.io.newURI(calendarURL, null, null));
+        clientCalendar.name="clientCalendar";
+        calmgr.registerCalendar(clientCalendar);
+        yield waitForInit(clientCalendar);
+        let item = createEventFromIcalString(exampleServerObj._propertyBag.icalString);
+        let pclient = cal.async.promisifyCalendar(clientCalendar);
+        yield pclient.addItem(item);
+        //get added Item
+        let addedItem = null;
+        //getItem async call doesn't work
+        clientCalendar.getItem(item.id, {
+        onGetResult: function (cal, stat, type, detail, count, items) {
+            addedItem = items[0];
+            dump('\n\n###addedItem:'+addedItem.icalString);
+        },
+        onOperationComplete: function() {}
+        });
+        do_check_eq(item.id,addedItem.id);
+        let newItem = item.clone();
+        newItem.title = "NewItemTitle";
+        let mItem = yield pclient.modifyItem(newItem,item);
+        dump('\n###modified Item\n'+mItem.icalString);
+        do_check_eq(newItem.title,mItem.title);
+        do_check_eq(newItem.id,mItem.id);
+        //clear metaData
+        exampleServerObj.storage.deleteMetaData('ctag');
+        exampleServerObj.storage.deleteMetaData('eTag1b05e158-631a-445f-8c5a-5743b5a05169');
+        exampleServerObj.storage.deleteMetaData('sTag1b05e158-631a-445f-8c5a-5743b5a05169');
+    }
+    catch(e){
+        dump('\n\n#### EEE: ' + e + e.fileName + e.lineNumber + '\n');
+    }
+});
+
+function* promiseRetrieveItem(itemId,calendar) {
+     let deferred = Promise.defer();
+     calendar.getItem(itemId, {
+        onGetResult: function (cal, stat, type, detail, count, items) {
+            let addedItem = items[0];
+            dump('\n\n###addedItem:'+addedItem.icalString);
+            deferred.resolve();
+    },
+        onOperationComplete: function() {}
+    });
+     return deferred.promise;
 }
 
 function registerFakeUMimTyp() {
@@ -411,7 +482,7 @@ function registerFakeUMimTyp() {
     }
 }
 
-function waitForInit(calendar) {
+function* waitForInit(calendar) {
     let deferred = Promise.defer();
     let caldavCheckSeverInfo = calendar.wrappedJSObject.completeCheckServerInfo;
     let wrapper = function(listener, error) {
@@ -425,14 +496,4 @@ function waitForInit(calendar) {
     };
     calendar.wrappedJSObject.completeCheckServerInfo = wrapper;
     return deferred.promise;
-} 
-
-function promiseAddItem(item, calendar) {
-    let deferred = Promise.defer();
-    calendar.addItem(item, {
-        onOperationComplete: function(aCalendar, aStatus, aOperationType, aId, aDetail) {
-            dump("onOperationComplete:"+aCalendar.name+" "+aStatus+" "+aOperationType+" "+aId+" "+aDetail + "\n");
-            deferred.resolve(aStatus);
-        }
-    });
 }

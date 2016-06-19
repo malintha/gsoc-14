@@ -2,8 +2,8 @@ finder([1,2],function(results){
     processor(results,onMethodsDone);
 });
 
-function onMethodsDone(results){
-    alert(results);
+function onMethodsDone(alert){
+    alert(alert);
 }
 
 function finder(records,cb){
@@ -19,4 +19,4 @@ function processor(records,cb){
         cb(records);
     },2000);
 }
-alert("meanwhile I show up");
+alert("meanwhile I");
